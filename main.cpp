@@ -633,10 +633,10 @@ int main (int argc, const char * argv[]) {
             pop->sub[isub].rep[irep].mean_Y = (double *)calloc(pop->sub[isub].rep[irep].dim_V[0],sizeof(double));
            
             pop->sub[isub].rep[irep].prop_sd = (double *)calloc(4,sizeof(double));
-            pop->sub[isub].rep[irep].prop_sd[0] = 0.005;
+            pop->sub[isub].rep[irep].prop_sd[0] = 0.0005;
             pop->sub[isub].rep[irep].prop_sd[1] = 0.05;
-            pop->sub[isub].rep[irep].prop_sd[2] = 0.001;
-            pop->sub[isub].rep[irep].prop_sd[3] = 10;
+            pop->sub[isub].rep[irep].prop_sd[2] = 0.0001;
+            pop->sub[isub].rep[irep].prop_sd[3] = 100;
             pop->sub[isub].rep[irep].maxsteps = 50;
             
             pop->sub[isub].rep[irep].accept = (int *)calloc(4,sizeof(int));

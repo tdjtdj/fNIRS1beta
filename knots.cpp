@@ -487,8 +487,8 @@ int knot_birth_death(REP *rep,POP *pop,const int sdegree,int iter,unsigned long 
     
     // set simulation time
 
-    prior_rate = 10;//rgamma(30,1,seed); // prior on number of knots given prior_rate is Poisson(prior_rate).  This results in a neg binomial prior.
-    Birth_rate = 10;
+    prior_rate = 15;//rgamma(30,1,seed); // prior on number of knots given prior_rate is Poisson(prior_rate).  This results in a neg binomial prior.
+    Birth_rate = 15;
     T= 1./Birth_rate;
     T = 1;
     calculate_residuals(rep,rep->P);
