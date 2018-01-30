@@ -499,9 +499,9 @@ void load_data_structs(POP *pop,int PPP)
             pop->sub[isub].rep[irep].mean_fit = (double *)calloc(pop->sub[isub].rep[irep].dim_X[0],sizeof(double));
            
             pop->sub[isub].rep[irep].prop_sd = (double *)calloc(4,sizeof(double));
-            pop->sub[isub].rep[irep].prop_sd[0] = 0.05;
+            pop->sub[isub].rep[irep].prop_sd[0] = 0.0005;
             pop->sub[isub].rep[irep].prop_sd[1] = 0.05;
-            pop->sub[isub].rep[irep].prop_sd[2] = 0.05;
+            pop->sub[isub].rep[irep].prop_sd[2] = 0.0001;
             pop->sub[isub].rep[irep].prop_sd[3] = 100;
             
             pop->sub[isub].rep[irep].accept = (int *)calloc(4,sizeof(int));
