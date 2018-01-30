@@ -15,10 +15,11 @@
 #include <time.h>
 #include "fNIRS.h"
 
-int MAX_ITER =  12000;
-int BURN_IN  =  2000;
+extern int MAX_ITER;
+extern int BURN_IN;
 extern sDLM *dlmStruc;
 extern int maxP;
+extern FILE *flog;
 
 void adjust_acceptance(double x,double *X,double rate)
 {
@@ -47,13 +48,9 @@ void adjust_acceptance2(double x,double *X,double rate)
 
 void mcmc(POP *pop,unsigned long *seed) {
     int i,j,k,iter,isub,irep,Z_cnt;
-    double ALPHA[3] = {4.9,4.9,.2};
     double **loglik;
     int nrow_loglik;
-    char *C,*S;
-    FILE *fout,*fout3,*fout4,*fout5,**fout_eta,**fout_delta,**fout_sub_beta,*fout_pop_beta;
-    FILE **fout_nknots,**fout_knots,**fout_res,**fout_sub_precY,*fout_reprec,**fout_delta2;
-    FILE *fout_ll,**fout_dlm,*fout_veta,*fout_wd;
+    FILE *fout;
     
     void draw_knot_locations(REP *rep,int sdegree,int *flag,unsigned long *seed);
     int knot_birth_death(REP *rep,POP *pop,const int sdegree,int iter,unsigned long *seed);
@@ -63,7 +60,7 @@ void mcmc(POP *pop,unsigned long *seed) {
     void DLM(REP *rep,int P,unsigned long *seed);
     
     void draw_precYstart(REP *rep,unsigned long *seed);
-    void draw_preceta(REP *rep,double **Q,unsigned long *seed);
+    void draw_preceta(REP *rep,unsigned long *seed);
     void draw_reprec(POP *pop,SUB *sub,unsigned long *seed);
  
     void calculate_residuals(REP *rep,int P);
@@ -74,150 +71,28 @@ void mcmc(POP *pop,unsigned long *seed) {
     void calWdelta(double *Ax,double *A,double *x,const int nrow,const int ncol);
     void calW(double *W,double *Y,double *Xb,double *Ve,const int nrow,const int ncol,const int P);
     
-    void draw_beta_eta(POP *pop,SUB *sub,REP *rep,unsigned long *seed);
-    void draw_eta(REP *rep,double **Q,int P,unsigned long *seed);
-    void draw_sub_beta(POP *pop,SUB *sub,unsigned long *seed);
+    void draw_beta_eta(POP *pop,SUB *sub,REP *rep,unsigned long *seed,int iter);
     void draw_pop_beta(POP *pop,SUB *sub,unsigned long *seed);
-     
+    
     void DIC(POP *pop,REP *rep,unsigned long *seed);
-/*    
-//    int minP = 20;
-    int minP = 2;
-    fout_ll = fopen("ll.dat","w");
-//    nrow_loglik = 10*20*(maxP-minP+1);
-    nrow_loglik = 10*15*(maxP-minP+1);
-    loglik = (double **)calloc(nrow_loglik,sizeof(double *));
-    for (i=0;i<nrow_loglik;i++)
-        loglik[i] = (double *)calloc(4,sizeof(double));
-//    double DELTA[30] = {0.9990, 0.9991, 0.9992, 0.9993, 0.9994, 0.9995, 0.9996, 0.9997, 0.9998, 0.9999};
-    double DELTA[10] = {0.90, 0.91, 0.92, 0.93, 0.94, 0.95, 0.96, 0.97, 0.98, 0.99};
-//    double BETA[32] = {0.9800, 0.981, 0.982, 0.983, 0.984, 0.985, 0.986, 0.987, 0.988, 0.989, 0.990, 0.991,
-//0.992, 0.993, 0.994, 0.995, 0.996, 0.997, 0.998, 0.999};
-    double BETA[15] = {0.7, 0.72, 0.74, 0.76, 0.78, 0.80, 0.82, 0.84, 0.86, 0.88, 0.90, 0.92, 0.94, 0.96, 0.98};
- //   double beta,delta = 0.998 - 0.0001;
-    int cnt = 0;
-    for (int id=0;id<10;id++) {
- //        for (int ib=0;ib<20;ib++) {
-         for (int ib=0;ib<15;ib++) {
-//           for (int P=minP;P<=maxP;P++) {
-            for (int P=minP;P<=maxP;P++) {
-                loglik[cnt][0] = DELTA[id];
-                loglik[cnt][1] = BETA[ib];
-                loglik[cnt][2] = (double)P;
-                cnt++;
-             }
-        }
-    }
-   
-    printf("cnt = %d nrow_loglik = %d\n",cnt,nrow_loglik);*/
+
+    pop->ED = 0;
     int reps = 0;
     for (isub=0;isub<pop->N_SUBS;isub++)
             reps += pop->sub[isub].N_REPS;
-    
-    fout_eta = (FILE **)calloc(pop->N_SUBS*reps,sizeof(FILE *));
-    fout_res = (FILE **)calloc(pop->N_SUBS*reps,sizeof(FILE *));
-    fout_delta = (FILE **)calloc(pop->N_SUBS*reps,sizeof(FILE *));
-    fout_delta2 = (FILE **)calloc(pop->N_SUBS*reps,sizeof(FILE *));
-    fout_sub_precY = (FILE **)calloc(pop->N_SUBS*reps,sizeof(FILE *));
-    fout_nknots = (FILE **)calloc(pop->N_SUBS*reps,sizeof(FILE *));
-    fout_knots = (FILE **)calloc(pop->N_SUBS*reps,sizeof(FILE *));
-    fout_sub_beta = (FILE **)calloc(pop->N_SUBS,sizeof(FILE *));
-    fout_dlm = (FILE **)calloc(pop->N_SUBS*reps,sizeof(FILE *));;
-    fout_veta = fopen("veta_draws.dat","w");
-    fout_wd = fopen("wdelta_draws.dat","w");
-    C = (char *)malloc(3*sizeof(char));
-    S = (char *)malloc(100*sizeof(char));
-    
-    fout_reprec = fopen("pop_reprec.dat","w");
-    fout_pop_beta = fopen("pop_betadraws.dat","w");
-    for (isub=0;isub<pop->N_SUBS;isub++) {
-        for (irep=0;irep<pop->sub[isub].N_REPS;irep++) {
-            S = strcpy(S,"DLM_draws");
-            itoa(isub,C);
-            S = strcat(S,C);
-            itoa(irep,C);
-            S = strcat(S,C);
-            S = strcat(S,".dat");
-            //printf("S: %s\n",S);
-            fout_dlm[isub*pop->N_SUBS+irep] = fopen(S,"w");
-            S = strcpy(S,"etadraws");
-            itoa(isub,C);
-            S = strcat(S,C);
-            itoa(irep,C);
-            S = strcat(S,C);
-            S = strcat(S,".dat");
-            //printf("S: %s\n",S);
-            fout_eta[isub*pop->N_SUBS+irep] = fopen(S,"w");
-            S = strcpy(S,"resdraws");
-            itoa(isub,C);
-            S = strcat(S,C);
-            itoa(irep,C);
-            S = strcat(S,C);
-            S = strcat(S,".dat");
-            //printf("S: %s\n",S);
-            fout_res[isub*pop->N_SUBS+irep] = fopen(S,"w");
-            S = strcpy(S,"deltadraws");
-            itoa(isub,C);
-            S = strcat(S,C);
-            itoa(irep,C);
-            S = strcat(S,C);
-            S = strcat(S,".dat");
-            //printf("S: %s\n",S);
-            fout_delta[isub*pop->N_SUBS+irep] = fopen(S,"w");
-            S = strcpy(S,"delta2draws");
-            itoa(isub,C);
-            S = strcat(S,C);
-            itoa(irep,C);
-            S = strcat(S,C);
-            S = strcat(S,".dat");
-            //printf("S: %s\n",S);
-            fout_delta2[isub*pop->N_SUBS+irep] = fopen(S,"w");
-            S = strcpy(S,"nknotdraws");
-            itoa(isub,C);
-            S = strcat(S,C);
-            itoa(irep,C);
-            S = strcat(S,C);
-            S = strcat(S,".dat");
-            //printf("S: %s\n",S);
-            fout_nknots[isub*pop->N_SUBS+irep] = fopen(S,"w");
-            S = strcpy(S,"knotdraws");
-            itoa(isub,C);
-            S = strcat(S,C);
-            itoa(irep,C);
-            S = strcat(S,C);
-            S = strcat(S,".dat");
-            //printf("S: %s\n",S);
-            fout_knots[isub*pop->N_SUBS+irep] = fopen(S,"w");
-             S = strcpy(S,"sub_precYdraws");
-            itoa(isub,C);
-            S = strcat(S,C);
-            itoa(irep,C);
-            S = strcat(S,C);
-            S = strcat(S,".dat");
-            //printf("S: %s\n",S);
-            fout_sub_precY[isub*pop->N_SUBS+irep] = fopen(S,"w");
-        }
-        S = strcpy(S,"sub_betadraws");
-        itoa(isub,C);
-        S = strcat(S,C);
-        S = strcat(S,".dat");
-        //printf("S: %s\n",S);
-        fout_sub_beta[isub] = fopen(S,"w");
-    }
-    free(C);
-    free(S);
+       
     int sdegree = 4;
     int aaa = 0;
-    FILE *foutfit = fopen("fit.dat","w");
-    for (iter=0;iter<=MAX_ITER;iter++) {
 
+    for (iter=0;iter<=MAX_ITER;iter++) {
+        if (!(iter%100)) printf("%d",iter);fflush(stdout);
+        if (!(iter%20) && (iter%100)) printf(".");fflush(stdout);
         for (isub=0;isub<pop->N_SUBS;isub++) {
  
             for (irep=0;irep<pop->sub[isub].N_REPS;irep++) {
 //printf("A\n");fflush(stdout);
                 if (iter == 0)
-//                    draw_eta(&(pop->sub[isub].rep[irep]),pop->Q2,pop->P,seed);
-                    draw_beta_eta(pop,&(pop->sub[isub]),&(pop->sub[isub].rep[irep]),seed);
+                    draw_beta_eta(pop,&(pop->sub[isub]),&(pop->sub[isub].rep[irep]),seed,iter);
 //printf("B %d\n",pop->sub[isub].rep[irep].nKnots);fflush(stdout);
                 aaa = knot_birth_death(&(pop->sub[isub].rep[irep]),pop,sdegree,iter,seed);
 //printf("C\n");fflush(stdout);
@@ -235,11 +110,11 @@ void mcmc(POP *pop,unsigned long *seed) {
 //                        else {
 //                            DLMtst(&(pop->sub[isub].rep[irep]),&delta,&beta,&(pop->P),iter,1,seed);                        
 //                        }
-//                        draw_preceta(&(pop->sub[isub].rep[irep]),pop->Q2,seed);
+//                        draw_preceta(&(pop->sub[isub].rep[irep]),seed);
 //                        draw_precYstart(&(pop->sub[isub].rep[irep]),pop->P,seed);
                     }
                 }
-                draw_beta_eta(pop,&(pop->sub[isub]),&(pop->sub[isub].rep[irep]),seed);
+                draw_beta_eta(pop,&(pop->sub[isub]),&(pop->sub[isub].rep[irep]),seed,iter);
                 if ((pop->sub[isub].rep[irep].dim_W[1] > 0) && (iter > -1)) {
                     DLMtst(&(pop->sub[isub].rep[irep]),iter,0,seed);
                     DLMtst(&(pop->sub[isub].rep[irep]),iter,1,seed);
@@ -250,20 +125,13 @@ void mcmc(POP *pop,unsigned long *seed) {
 //                    DLMtst(&(pop->sub[isub].rep[irep]),&delta,&beta,&(pop->P),iter,1,seed);
 //                    DLM(&(pop->sub[isub].rep[irep]),pop->P,delta,beta,seed);
 //                }
-                draw_preceta(&(pop->sub[isub].rep[irep]),pop->Q2,seed);
+                draw_preceta(&(pop->sub[isub].rep[irep]),seed);
                 draw_precYstart(&(pop->sub[isub].rep[irep]),seed);
         
                 
                 
-                fprintf(fout_nknots[isub*pop->N_SUBS+irep],"%d ",pop->sub[isub].rep[irep].nKnots-8);
-                if (!(iter%100)) {
-                for (i=0;i<pop->sub[isub].rep[irep].dim_V[0];i++)
-                    fprintf(fout_veta,"%lf ",pop->sub[isub].rep[irep].Veta[i]);
-                fprintf(fout_veta,"\n");
-                 for (i=0;i<pop->sub[isub].rep[irep].dim_W[0];i++)
-                    fprintf(fout_wd,"%lf ",pop->sub[isub].rep[irep].Wdelta[i]);
-                fprintf(fout_wd,"\n");
-                }
+                fprintf(pop->sub[isub].rep[irep].fout_nknots,"%d ",pop->sub[isub].rep[irep].nKnots-8);
+
                 if ((iter>BURN_IN)) {
                     for (i=pop->sub[isub].rep[irep].P;i<pop->sub[isub].rep[irep].dim_W[0];i++) {
                         for (j=0;j<pop->sub[isub].rep[irep].dim_W[1];j++) {
@@ -278,17 +146,10 @@ void mcmc(POP *pop,unsigned long *seed) {
                      }
                     
                    
- //                   for (i=pop->P;i<pop->sub[isub].rep[irep].dim_X[0];i++)
- //                       fprintf(fout_sub_precY[isub*pop->N_SUBS+irep],"%lf ",pop->sub[isub].rep[irep].d_Y[i]);
-//                    fprintf(fout_sub_precY[isub*pop->N_SUBS+irep],"\n");fflush(NULL);
                    for (i=0;i<pop->sub[isub].rep[irep].dim_V[1];i++)
-                        fprintf(fout_eta[isub*pop->N_SUBS+irep],"%lf ",pop->sub[isub].rep[irep].eta[i]);
-                    fprintf(fout_eta[isub*pop->N_SUBS+irep],"\n");
-                   // if (iter == MAX_ITER) {
-                        for (i=0;i<pop->sub[isub].rep[irep].dim_V[0];i++)
-                            pop->sub[isub].rep[irep].mean_Y[i] += pop->sub[0].rep[irep].Y[i];
-                   // }
-                    
+                        fprintf(pop->sub[isub].rep[irep].fout_eta,"%lf ",pop->sub[isub].rep[irep].eta[i]);
+                    fprintf(pop->sub[isub].rep[irep].fout_eta,"\n");
+                   
                     double TTT=0;
                     for (i=pop->sub[isub].rep[irep].P;i<pop->sub[isub].rep[irep].dim_X[0];i++)
                         TTT += pop->sub[isub].rep[irep].d_Y[i];
@@ -306,17 +167,17 @@ void mcmc(POP *pop,unsigned long *seed) {
                     for (i=0;i<pop->sub[isub].rep[irep].dim_W[0];i++)
                         pop->sub[isub].rep[irep].mWdelta[i] += pop->sub[isub].rep[irep].Wdelta[i];
                     
-                    fprintf(fout_dlm[isub*pop->N_SUBS+irep],"%lf %lf %d %d\n",pop->sub[isub].rep[irep].df_delta1,pop->sub[isub].rep[irep].df_delta2,pop->sub[isub].rep[irep].P,aaa);
+                    fprintf(pop->sub[isub].rep[irep].fout_dlm,"%lf %lf %d\n",pop->sub[isub].rep[irep].df_delta1,pop->sub[isub].rep[irep].df_delta2,pop->sub[isub].rep[irep].P);
                     
                     for (i=4;i<pop->sub[isub].rep[irep].nKnots-4;i++)
-                        fprintf(fout_knots[isub*pop->N_SUBS+irep],"%lf ",pop->sub[isub].rep[irep].knots[i]);
+                        fprintf(pop->sub[isub].rep[irep].fout_knots,"%lf ",pop->sub[isub].rep[irep].knots[i]);
                         
                  }
                
                 if (!(iter%100)) {
-                    printf("iter = %6d\t Sub %d, Rep %d \t int knots = %d",iter,isub,irep,pop->sub[isub].rep[irep].nKnots-2*4);
-                    printf("\t precY0 = %10.6lf \t preceta = %10.6lf\n",pop->sub[isub].rep[irep].d_Y[pop->sub[isub].rep[irep].dim_X[0]-1],pop->sub[isub].rep[irep].preceta);
-                    printf("\t df_delta1 = %10.6lf \t df_delta2 = %10.6lf \t P = %3d\n",pop->sub[isub].rep[irep].df_delta1,pop->sub[isub].rep[irep].df_delta2,pop->sub[isub].rep[irep].P);
+                    fprintf(flog,"iter = %6d\t Sub %d, Rep %d \t int knots = %d",iter,isub,irep,pop->sub[isub].rep[irep].nKnots-2*4);
+                    fprintf(flog,"\t precY0 = %10.6lf \t preceta = %10.6lf\n",pop->sub[isub].rep[irep].d_Y[pop->sub[isub].rep[irep].dim_X[0]-1],pop->sub[isub].rep[irep].preceta);
+                    fprintf(flog,"\t df_delta1 = %10.6lf \t df_delta2 = %10.6lf \t P = %3d\n",pop->sub[isub].rep[irep].df_delta1,pop->sub[isub].rep[irep].df_delta2,pop->sub[isub].rep[irep].P);
                   //  printf("\t\t precdelta = %10.6lf, preceta = %10.6lf\n\n",pop->sub[isub].rep[irep].precdelta,pop->sub[isub].rep[irep].preceta);
                     
                  }
@@ -326,102 +187,88 @@ void mcmc(POP *pop,unsigned long *seed) {
                     rt = (double)pop->sub[isub].rep[irep].accept[0]/(double)pop->sub[isub].rep[irep].attempt[0];
                     adjust_acceptance2(rt,&(pop->sub[isub].rep[irep].prop_sd[0]),0.35);
                     pop->sub[isub].rep[irep].accept[0] = pop->sub[isub].rep[irep].attempt[0] = 0;
-                    printf("\t\t rt = %lf proposal = %lf\n",rt,pop->sub[isub].rep[irep].prop_sd[0]);
+                    fprintf(flog,"\t\t rt = %lf proposal = %lf\n",rt,pop->sub[isub].rep[irep].prop_sd[0]);
 //                    }
                     rt = (double)pop->sub[isub].rep[irep].accept[1]/(double)pop->sub[isub].rep[irep].attempt[1];
                     adjust_acceptance2(rt,&(pop->sub[isub].rep[irep].prop_sd[1]),0.35);
                     pop->sub[isub].rep[irep].accept[1] = pop->sub[isub].rep[irep].attempt[1] = 0;
-                    printf("\t\t rt = %lf proposal = %lf\n",rt,pop->sub[isub].rep[irep].prop_sd[1]);
+                    fprintf(flog,"\t\t rt = %lf proposal = %lf\n",rt,pop->sub[isub].rep[irep].prop_sd[1]);
    
                     rt = (double)pop->sub[isub].rep[irep].accept[3]/(double)pop->sub[isub].rep[irep].attempt[3];
                     adjust_acceptance2(rt,&(pop->sub[isub].rep[irep].prop_sd[3]),0.35);
                     pop->sub[isub].rep[irep].accept[3] = pop->sub[isub].rep[irep].attempt[3] = 0;
-                    printf("\t\t rt = %lf proposal = %lf\n",rt,pop->sub[isub].rep[irep].prop_sd[3]);
+                    fprintf(flog,"\t\t rt = %lf proposal = %lf\n",rt,pop->sub[isub].rep[irep].prop_sd[3]);
                  }
                   fflush(NULL);
             }
-//            draw_sub_beta(pop,&(pop->sub[isub]),seed);
          
             if ((iter>BURN_IN)) {
                 for (i=0;i<pop->Nb*(pop->Ns);i++)
-                    fprintf(fout_sub_beta[isub],"%lf ",pop->sub[isub].beta[i]);
-                fprintf(fout_sub_beta[isub],"\n");
-/*                for (i=0;i<pop->sub[isub].N_REPS;i++)
-                    for (j=0;j<3;j++)
-                        fprintf(fout_sub_precY[isub],"%lf ",pop->sub[isub].rep[i].precY[j]);
-                fprintf(fout_sub_precY[isub],"\n");*/
+                    fprintf(pop->sub[isub].fout_beta,"%lf ",pop->sub[isub].beta[i]);
+                fprintf(pop->sub[isub].fout_beta,"\n");
             }
         }
- //       printf("here1\n");fflush(NULL);
         if (pop->non_parm || pop->GRP)
             draw_reprec(pop,pop->sub,seed);
- //       printf("here2\n");fflush(NULL);
         if (pop->GRP) {
             draw_pop_beta(pop,pop->sub,seed);
         }
         if (!(iter%100)) {
             double nmean[25];
-            for (k=0;k<pop->Ns;k++) {
-                printf("Stimulus %d\n",k);     
-                if (pop->GRP) {
-                    for (i=0;i<pop->Nb;i++)
-                        printf("\t %g ",pop->re_prec[i+k*pop->Nb]);
-                    printf("\n\n");
+            for (k=0;k<pop->Ns;k++)
+                fprintf(flog,"Stimulus %d\n",k);
+            if (pop->GRP) {
+                for (i=0;i<pop->Ns;i++)
+                    fprintf(flog,"\t %g ",pop->re_prec[i]);
+                fprintf(flog,"\n\n");
+            }
+            for (i=0;i<pop->N_SUBS;i++) {
+                for (j=0;j<pop->Nb*pop->Ns;j++) {
+                    fprintf(flog,"\t %10.6lf \t ",pop->sub[i].beta[j]);
                 }
-                for (i=0;i<pop->N_SUBS;i++) {
-                    for (j=0;j<pop->Nb;j++) {
-                        printf("\t %10.6lf \t ",pop->sub[i].beta[j+pop->Nb*k]);
-                    }
-                    printf("\n");
-                }
-                printf("\n");
-                if (pop->GRP) {
-                    for (i=0;i<pop->Nb;i++) 
-                        printf("\t %10.6lf \t ",pop->beta[i + pop->Nb*k]);
-                    printf("\n\n");fflush(stdout);
-                }
+                fprintf(flog,"\n");
+            }
+            fprintf(flog,"\n");
+            if (pop->GRP) {
+                for (i=0;i<pop->Ncov*pop->Nb*pop->Ns;i++)
+                    fprintf(flog,"\t %10.6lf \t ",pop->beta[i]);
+                fprintf(flog,"\n\n");fflush(stdout);
             }
         }
+
         if ((iter>BURN_IN)) {
-            for (i=0;i<pop->Nb*pop->Ns;i++)
-                fprintf(fout_pop_beta,"%lf ",pop->beta[i]);
-            fprintf(fout_pop_beta,"\n");
+            for (i=0;i<pop->Ncov*pop->Nb*pop->Ns;i++)
+                fprintf(pop->fout_beta,"%lf ",pop->beta[i]);
+            fprintf(pop->fout_beta,"\n");
             for (i=0;i<pop->Ns;i++)
-                for (j=0;j<pop->Nb;j++)
-                fprintf(fout_reprec,"%lf ",pop->re_prec[j+i*pop->Nb]);
-            fprintf(fout_reprec,"\n");fflush(NULL);
+                fprintf(pop->fout_reprec,"%lf ",pop->re_prec[i]);
+            fprintf(pop->fout_reprec,"\n");fflush(NULL);
             
         }
     }
-    fclose(fout_veta);
-    fclose(fout_wd);
-    fclose(fout_pop_beta);
-    fclose(fout_reprec);
-    fclose(foutfit);
+    fclose(pop->fout_beta);
+    fclose(pop->fout_reprec);
+
     for (isub=0;isub<pop->N_SUBS;isub++) {
         for (irep=0;irep<pop->sub[isub].N_REPS;irep++) {
-            fclose(fout_dlm[isub*pop->N_SUBS+irep]);
-            fclose(fout_eta[isub*pop->N_SUBS+irep]);
-            fclose(fout_nknots[isub*pop->N_SUBS+irep]);
-            fclose(fout_knots[isub*pop->N_SUBS+irep]);
+            fclose(pop->sub[isub].rep[irep].fout_dlm);
+            fclose(pop->sub[isub].rep[irep].fout_eta);
+            fclose(pop->sub[isub].rep[irep].fout_nknots);
+            fclose(pop->sub[isub].rep[irep].fout_knots);
         }
-        fclose(fout_sub_beta[isub]);
+        fclose(pop->sub[isub].fout_beta);
     }
-
 
    for (isub=0;isub<pop->N_SUBS;isub++) {
         for (irep=0;irep<pop->sub[isub].N_REPS;irep++) {
             for (i=pop->sub[isub].rep[irep].P;i<pop->sub[isub].rep[irep].dim_W[0];i++) {
                 for (j=0;j<pop->sub[isub].rep[irep].dim_W[1];j++) {
                     pop->sub[isub].rep[irep].mdelta[i*pop->sub[isub].rep[irep].dim_W[1]+j] /= (double)(MAX_ITER-BURN_IN);
-                    fprintf(fout_delta[isub*pop->N_SUBS+irep],"%lf ",pop->sub[isub].rep[irep].mdelta[i*pop->sub[isub].rep[irep].dim_W[1]+j]);
-                    fprintf(fout_delta2[isub*pop->N_SUBS+irep],"%lf ",sqrt(pop->sub[isub].rep[irep].mdelta2[i*pop->sub[isub].rep[irep].dim_W[1]+j]/(MAX_ITER-BURN_IN)- pop->sub[isub].rep[irep].mdelta[i*pop->sub[isub].rep[irep].dim_W[1]+j]*pop->sub[isub].rep[irep].mdelta[i*pop->sub[isub].rep[irep].dim_W[1]+j]));
+                    fprintf(pop->sub[isub].rep[irep].fout_delta,"%lf ",pop->sub[isub].rep[irep].mdelta[i*pop->sub[isub].rep[irep].dim_W[1]+j]);
                 }
-                fprintf(fout_delta[isub*pop->N_SUBS+irep],"\n");                  
-                fprintf(fout_delta2[isub*pop->N_SUBS+irep],"\n");  
+                fprintf(pop->sub[isub].rep[irep].fout_delta,"\n");                  
             }                
-            fclose(fout_delta[isub*pop->N_SUBS+irep]);
-            fclose(fout_delta2[isub*pop->N_SUBS+irep]);
+            fclose(pop->sub[isub].rep[irep].fout_delta);
         }
     }
     
@@ -429,53 +276,26 @@ void mcmc(POP *pop,unsigned long *seed) {
         for (irep=0;irep<pop->sub[isub].N_REPS;irep++) {
             for (i=0;i<pop->sub[isub].rep[irep].dim_X[0];i++) {
                     pop->sub[isub].rep[irep].md_Y[i] /= (double)(MAX_ITER-BURN_IN);
-                    fprintf(fout_sub_precY[isub*pop->N_SUBS+irep],"%lf ",pop->sub[isub].rep[irep].md_Y[i]);
- //                   fprintf(fout_delta2[isub*pop->N_SUBS+irep],"%lf ",sqrt(pop->sub[isub].rep[irep].mdelta2[i*pop->sub[isub].rep[irep].dim_W[1]+j]/(MAX_ITER-BURN_IN)- pop->sub[isub].rep[irep].mdelta[i*pop->sub[isub].rep[irep].dim_W[1]+j]*pop->sub[isub].rep[irep].mdelta[i*pop->sub[isub].rep[irep].dim_W[1]+j]));
-             }                
-               fprintf(fout_sub_precY[isub*pop->N_SUBS+irep],"\n");                  
-  //              fprintf(fout_d_Y2[isub*pop->N_SUBS+irep],"\n");  
-            fclose(fout_sub_precY[isub*pop->N_SUBS+irep]);
-    //        fclose(fout_delta2[isub*pop->N_SUBS+irep]);
+                    fprintf(pop->sub[isub].rep[irep].fout_prec,"%lf ",pop->sub[isub].rep[irep].md_Y[i]);
+            }                
+            fprintf(pop->sub[isub].rep[irep].fout_prec,"\n");                  
+            fclose(pop->sub[isub].rep[irep].fout_prec);
         }
-    }
-    
-printf("here\n");fflush(NULL);
-    C = (char *)malloc(3*sizeof(char));
-    S = (char *)malloc(100*sizeof(char));
-      
+    }     
       
     for (isub=0;isub<pop->N_SUBS;isub++) {
         for (irep=0;irep<pop->sub[isub].N_REPS;irep++) {
-            S = strcpy(S,"Wdelta");
-            itoa(isub,C);
-            S = strcat(S,C);
-            itoa(irep,C);
-            S = strcat(S,C);
-            S = strcat(S,".dat");
-            fout = fopen(S,"w");
             for (i=0;i<pop->sub[isub].rep[irep].dim_W[0];i++)
-                fprintf(fout,"%lf ",pop->sub[isub].rep[irep].mWdelta[i]/(double)((MAX_ITER-BURN_IN)));
-            fclose(fout);
+                fprintf(pop->sub[isub].rep[irep].fout_wdelta,"%lf ",pop->sub[isub].rep[irep].mWdelta[i]/(double)((MAX_ITER-BURN_IN)));
+            fclose(pop->sub[isub].rep[irep].fout_wdelta);
         }
     }
-    fout = fopen("lastres.dat","w");
-    for (i=0;i<pop->sub[0].rep[0].dim_X[0];i++)
-        fprintf(fout,"%lf ",pop->sub[0].rep[0].residuals[i]);
-    fprintf(fout,"\n");
-    fclose(fout);
     
     for (isub=0;isub<pop->N_SUBS;isub++) {
         for (irep=0;irep<pop->sub[isub].N_REPS;irep++) {
-            S = strcpy(S,"Veta");
-            itoa(isub,C);
-            S = strcat(S,C);
-            itoa(irep,C);
-            S = strcat(S,C);
-            S = strcat(S,".dat");
-            fout = fopen(S,"w");
-            for (i=0;i<pop->sub[isub].rep[irep].dim_V[0];i++)
-                fprintf(fout,"%lf ",pop->sub[isub].rep[irep].mVeta[i]/(double)((MAX_ITER-BURN_IN)));
-            fclose(fout);
+           for (i=0;i<pop->sub[isub].rep[irep].dim_V[0];i++)
+                fprintf(pop->sub[isub].rep[irep].fout_veta,"%lf ",pop->sub[isub].rep[irep].mVeta[i]/(double)((MAX_ITER-BURN_IN)));
+            fclose(pop->sub[isub].rep[irep].fout_veta);
         }
     }
     pop->ED /= ((MAX_ITER-BURN_IN));
@@ -498,60 +318,28 @@ printf("here\n");fflush(NULL);
         }
     }
     DE *= -2;
-    printf("DIC = %lf pD = %lf\n",2*pop->ED - DE,pop->ED - DE);
-    fout = fopen("DIC.dat","w");
+    fprintf(flog,"DIC = %lf pD = %lf\n",2*pop->ED - DE,pop->ED - DE);
+    fout = fopen("./log/DIC.log","w");
     fprintf(fout, "DIC = %15.3lf, pD = %15.3lf\n",2*pop->ED - DE,pop->ED - DE);
     fclose(fout);
-    for (isub=0;isub<pop->N_SUBS;isub++) {
-        for (irep=0;irep<pop->sub[isub].N_REPS;irep++) {
-            S = strcpy(S,"mean_res");
-            itoa(isub,C);
-            S = strcat(S,C);
-            itoa(irep,C);
-            S = strcat(S,C);
-            S = strcat(S,".dat");
-            fout = fopen(S,"w");
-            for (i=0;i<pop->sub[isub].rep[irep].dim_X[0];i++)
-                fprintf(fout,"%lf ",pop->sub[isub].rep[irep].mean_res[i]);
-            fclose(fout);
-        }
-    }
-
-    for (isub=0;isub<pop->N_SUBS;isub++) {
-        for (irep=0;irep<pop->sub[isub].N_REPS;irep++) {
-            S = strcpy(S,"mean_fit");
-            itoa(isub,C);
-            S = strcat(S,C);
-            itoa(irep,C);
-            S = strcat(S,C);
-            S = strcat(S,".dat");
-            fout = fopen(S,"w");
-            for (i=0;i<pop->sub[isub].rep[irep].dim_X[0];i++)
-                fprintf(fout,"%lf ",pop->sub[isub].rep[irep].mean_fit[i]);
-            fclose(fout);
-        }
-    }
-
-    for (isub=0;isub<pop->N_SUBS;isub++) {
-        for (irep=0;irep<pop->sub[isub].N_REPS;irep++) {
-            S = strcpy(S,"mean_Y");
-            itoa(isub,C);
-            S = strcat(S,C);
-            itoa(irep,C);
-            S = strcat(S,C);
-            S = strcat(S,".dat");
-            fout = fopen(S,"w");
-            for (i=0;i<pop->sub[isub].rep[irep].dim_V[0];i++)
-                fprintf(fout,"%lf ",pop->sub[isub].rep[irep].mean_Y[i]/=(double)(MAX_ITER-BURN_IN));
-            fclose(fout);
-        }
-    }
-
     
-    free(C);
-    free(S);
-    
-  }
+    for (isub=0;isub<pop->N_SUBS;isub++) {
+        for (irep=0;irep<pop->sub[isub].N_REPS;irep++) {
+            for (i=0;i<pop->sub[isub].rep[irep].dim_X[0];i++)
+                fprintf(pop->sub[isub].rep[irep].fout_res,"%lf ",pop->sub[isub].rep[irep].mean_res[i]);
+            fclose(pop->sub[isub].rep[irep].fout_res);
+        }
+    }
+
+    for (isub=0;isub<pop->N_SUBS;isub++) {
+        for (irep=0;irep<pop->sub[isub].N_REPS;irep++) {
+           for (i=0;i<pop->sub[isub].rep[irep].dim_X[0];i++)
+                fprintf(pop->sub[isub].rep[irep].fout_fit,"%lf ",pop->sub[isub].rep[irep].mean_fit[i]);
+            fclose(pop->sub[isub].rep[irep].fout_fit);
+        }
+    }
+        
+}
 
 void draw_precYstart(REP *rep,unsigned long *seed) {
     double ALPHA=0.001,BETA=0.001;
@@ -703,17 +491,15 @@ void calculate_res5(REP *rep,int P) {
         rep->residuals5[i] = rep->Y[i] - rep->Wdelta[i];
 }
 
-void draw_preceta(REP *rep,double **Q,unsigned long *seed) {
+void draw_preceta(REP *rep,unsigned long *seed) {
     double ALPHA=0, BETA=0;
     double a, b;
-    ALPHA = 1;
-    BETA =  1;
+    ALPHA = 1.1;
+    BETA =  1.1;
     b = 0;
     
     for (int i=0;i<rep->dim_V[1];i++)
-//        for (int j=0;j<rep->dim_V[1];j++)
             b += rep->eta[i]*rep->eta[i];
- //           b += rep->eta[i]*Q[i][j]*rep->eta[j];
     
     a = 0.5*rep->dim_V[1] + ALPHA;
     
@@ -723,24 +509,55 @@ void draw_preceta(REP *rep,double **Q,unsigned long *seed) {
 }
 
 void draw_reprec(POP *pop,SUB *sub,unsigned long *seed) {
-    int N;
+    int N,M;
     double ALPHA, BETA,tmp;
-    
-    ALPHA = 1;
-    BETA  = 1;
-    
-    N = pop->N_SUBS;
+    double *Xb;
+
+    ALPHA = 1.1;//10;
+    BETA  = 1.1;//10;
+        
+    Xb = (double *)calloc(pop->Ns*pop->Nb,sizeof(double));
     for (int is=0;is<pop->Ns;is++) {
-        for (int j=0;j<pop->Nb;j++) {
-            tmp = 0;
-            for (int i=0;i<pop->N_SUBS;i++) {
-                tmp += (sub[i].beta[j+is*pop->Nb]-pop->beta[j+is*pop->Nb])*(sub[i].beta[j+is*pop->Nb]-pop->beta[j+is*pop->Nb]);
-            }
-            double tmp2 = rgamma(ALPHA + 0.5*(double)N,BETA + 0.5*tmp,seed);
-            pop->re_prec[j+is*pop->Nb] = tmp2;
+        tmp = 0;
+        for (int i=0;i<pop->N_SUBS;i++) {
+            M = sub[i].dim_X[0];
+            N = sub[i].dim_X[1];
+            calAx(Xb,sub[i].X,pop->beta,(const int)M,(const int)N);
+            for (int j=0;j<M;j++)
+                tmp += (sub[i].beta[j]-Xb[j])*(sub[i].beta[j]-Xb[j]);
         }
+        double tmp2 = rgamma(ALPHA + 0.5*(double)pop->N_SUBS*pop->Nb,BETA + 0.5*tmp,seed);
+        pop->re_prec[is] = tmp2;
+//        printf("%lf\n",pop->re_prec[is]);
     }
+    free(Xb);
 }
+
+/*void draw_reprec(POP *pop,SUB *sub,unsigned long *seed) {
+    int N,M;
+    double ALPHA, BETA,*tmp;
+    double *Xb;
+    ALPHA = 1.1;
+    BETA  = 1.1;
+    
+    M = pop->Ns*pop->Nb;
+    N = pop->Ncov*M;
+    Xb = (double *)calloc(M,sizeof(double));
+    tmp = (double *)calloc(M,sizeof(double));
+    
+
+    for (int isub=0;isub<pop->N_SUBS;isub++) {
+        calAx(Xb,sub[isub].X,pop->beta,(const int)M,(const int)N);
+        for (int i=0;i<M;i++)
+            tmp[i] += (sub[isub].beta[i]-Xb[i])*(sub[isub].beta[i]-Xb[i]);
+    }
+    for (int i=0;i<M;i++)
+        pop->re_prec[i] = rgamma(ALPHA + 0.5*(double)pop->N_SUBS,BETA + 0.5*tmp[i],seed);
+    
+    free(Xb);
+    free(tmp);
+
+}*/
 
 double tden(double x,double mean,double var,double df) {
     double tmp,value = 0;
@@ -1208,10 +1025,10 @@ void DLM(REP *rep,int P,unsigned long *seed) {
 
 }
 
-void draw_beta_eta(POP *pop,SUB *sub,REP *rep,unsigned long *seed) {
+void draw_beta_eta(POP *pop,SUB *sub,REP *rep,unsigned long *seed,int iter) {
     int i,j,ncol;
     double *M,*YY,*V,*VpV,*J,*X,*betaeta;
-        
+
     /* calculate H(X,delta) */
     /* calculate J(V,delta) */
   
@@ -1263,8 +1080,6 @@ void draw_beta_eta(POP *pop,SUB *sub,REP *rep,unsigned long *seed) {
    
     M = (double *)calloc(ncol,sizeof(double));
     VpV = (double *)calloc(ncol*ncol,sizeof(double));
-//    for (i=0;i<ncol;i++)
-//        VpV[i] = (double *)calloc(ncol,sizeof(double));
    
   
     /* Add X and -J(V,delta)*/
@@ -1282,17 +1097,28 @@ void draw_beta_eta(POP *pop,SUB *sub,REP *rep,unsigned long *seed) {
    
     for (i=rep->dim_X[1];i<ncol;i++)
         VpV[i*ncol+i] += rep->preceta;
-
+    free(V);
+    V = (double *)calloc(ncol*ncol,sizeof(double));
+    for (i=0;i<ncol*ncol;i++)
+        V[i] = VpV[i];
+        
     if (pop->non_parm || pop->GRP) {
-        for (int is=0;is<pop->Ns;is++) {
+        int Nrow = rep->dim_X[1];
+        int Ncol = pop->Ncov*Nrow;
+        double *Xb = (double *)calloc(Nrow,sizeof(double));
+        calAx(Xb,sub->X,pop->beta,(const int)Nrow,(const int)Ncol);
+ /*       for (int i=0;i<Nrow;i++)
+            M[i] += pop->re_prec[i]*Xb[i];
+        for (int i=0;i<Nrow;i++)
+            VpV[i*ncol + i] += pop->re_prec[i];*/
+         for (int is=0;is<pop->Ns;is++) {
             for (int i=0;i<pop->Nb;i++) {
-//                for (int j=0;j<pop->Nb;j++) {
-                    M[i+is*pop->Nb] += pop->re_prec[j+is*pop->Nb]*pop->beta[i+is*pop->Nb];
-                    VpV[(i+is*pop->Nb)*ncol+i+is*pop->Nb] += pop->re_prec[j+is*pop->Nb];
-//                }
+                    M[i+is*pop->Nb] += pop->re_prec[is]*Xb[i+is*pop->Nb];
+                    VpV[(i+is*pop->Nb)*ncol+i+is*pop->Nb] += pop->re_prec[is];
             }
         }
-    }
+        free(Xb);
+   }
    
     int err = cholesky_decomp2vec(VpV,ncol);
     
@@ -1306,6 +1132,17 @@ void draw_beta_eta(POP *pop,SUB *sub,REP *rep,unsigned long *seed) {
     }
     else {
         printf("error in draw_beta_eta, precision is not SPD\n");
+        fprintf(flog,"iter = %d\n",iter);
+        for (i=0;i<pop->Ns;i++)
+            fprintf(flog,"re_prec = %lf\n",pop->re_prec[i]);
+        fprintf(flog,"rep->preceta = %lf\n",rep->preceta);
+        fprintf(flog,"\n");
+        for (i=0;i<ncol;i++) {
+            for (j=0;j<ncol;j++)
+                fprintf(flog,"%lf ",V[i*ncol+j]);
+            fprintf(flog,"\n");
+        }
+        fprintf(flog,"\n");
         exit(0);
     }
 
@@ -1325,137 +1162,49 @@ void draw_beta_eta(POP *pop,SUB *sub,REP *rep,unsigned long *seed) {
     calW(rep->W,rep->Y,rep->Xbeta,rep->Veta,(const int)rep->dim_W[0],(const int)rep->dim_W[1],rep->P);
     calWdelta(rep->Wdelta,rep->W,rep->delta,(const int)rep->dim_W[0],(const int)rep->dim_W[1]);
 
-//     for (i=0;i<rep->dim_V[0];i++)
-//        free(J[i]);
     free(J);
- //   for (i=0;i<rep->dim_V[0];i++)
- //       free(X[i]);
     free(X);
-//    for (i=0;i<ncol;i++)
-//        free(VpV[i]);
     free(VpV);
     free(M);
     free(mean);
- //   for (i=0;i<rep->dim_V[0];i++)
- //       free(V[i]);
     free(V);
   }
 
-void draw_sub_beta(POP *pop,SUB *sub,unsigned long *seed) {
-    double *X,*P,*M,*mean;
-    REP *rep;
-    
-    int N;
-    N = pop->Ns*pop->Nb;
-    mean = (double *)calloc(N,sizeof(double));
-    M = (double *)calloc(N,sizeof(double));
-    P = (double *)calloc(N*N,sizeof(double));
-            
-    for (int i=0;i<sub->N_REPS;i++) {
-        rep = &(sub->rep[i]);
-        /* calculate H(X,delta) */
- 
-        calH(rep->H,rep->X,rep->delta,(const int)rep->dim_X[0],(const int)rep->dim_X[1],(const int)sub->rep[i].P);
-
-        /* calculate H(X,delta)beta */
-    
-        calAx(rep->Hbeta,rep->H,sub->beta,(const int)rep->dim_X[0],(const int)rep->dim_X[1]);
-
-        /* calculate Y - Veta - Wdelta - H(X,delta)beta */
-    
-        calculate_res1(rep,sub->rep[i].P);
-    
-        for (int j=sub->rep[i].P;j<rep->dim_X[0];j++)
-            rep->residuals1[j] -= rep->Hbeta[j];
-
-        /* Subtract H(X,delta) from X */
-        X = (double *)calloc(rep->dim_X[0]*rep->dim_X[1],sizeof(double));
- //       for (int j=0;j<rep->dim_X[0];j++)
- //           X[j] = (double *)calloc(rep->dim_X[1],sizeof(double));
-         
-
-        for (int j=sub->rep[i].P;j<rep->dim_X[0];j++)
-            for (int k=0;k<rep->dim_X[1];k++)
-                X[j*rep->dim_X[1]+k] = rep->X[j*rep->dim_X[1]+k] - rep->H[j*rep->dim_X[1]+k];
-    
-        calApVinvX(M,X,rep->residuals1,rep->d_Y,rep->dim_X[0],rep->dim_X[1]);
-    
-        for (int j=0;j<rep->dim_X[1];j++)
-            mean[j] = M[j];
-            
-        /* calculate  (X - H)'V^(-1)(X - H) */
-    
-        calApVinvA(rep->XpX,X,rep->d_Y,(const int)rep->dim_X[0],(const int)rep->dim_X[1]);
-   
- //       for (int j=0;j<rep->dim_X[0];j++)
- //           free(X[j]);
-        free(X);
-    
-    
-        for (int j=0;j<rep->dim_X[1];j++)
-            for (int k=0;k<rep->dim_X[1];k++)
-                P[j*rep->dim_X[1]+k] += rep->XpX[j*rep->dim_X[1]+k];
-    }
-    
-    if (pop->non_parm || pop->GRP) {
-        for (int is=0;is<pop->Ns;is++) {
-            for (int i=0;i<pop->Nb;i++) {
-                for (int j=0;j<pop->Nb;j++) {
-                    mean[i+is*pop->Nb] += pop->re_prec[j+is*pop->Nb]*pop->Q[i+is*pop->Nb][j+is*pop->Nb]*pop->beta[j+is*pop->Nb];
-                    P[(i+is*pop->Nb)*rep->dim_X[1] + (j+is*pop->Nb)] += pop->re_prec[j+is*pop->Nb]*pop->Q[i+is*pop->Nb][j+is*pop->Nb];
-                }
-            }
-        }
-    }
-    int err = cholesky_decomp2vec(P,rep->dim_X[1]);
-    
-    if (err) {  // err = 1 means P is SPD
-        err = forward_substitution2vec(P,mean,N);
-        err = cholesky_backsub2vec(P,mean,N);
-        err = rmvnorm3vec(sub->beta,P,N,mean,seed,1);
-    }
-    else {
-        printf("error in draw_sub_beta, precision is not SPD\n");
-        exit(0);
-    }
-    
-    free(P);
-    free(M);
-    free(mean);
-    
-    for (int i=0;i<sub->N_REPS;i++) {
-        rep = &(sub->rep[i]);
-        
-      /* calculate Xbeta */
-        calAx(rep->Xbeta,rep->X,sub->beta,(const int)rep->dim_X[0],(const int)rep->dim_X[1]);
-
-        /* update W and Wdelta */
-    
-        calW(rep->W,rep->Y,rep->Xbeta,rep->Veta,(const int)rep->dim_W[0],(const int)rep->dim_W[1],(const int)rep->P);
-        calWdelta(rep->Wdelta,rep->W,rep->delta,(const int)rep->dim_W[0],(const int)rep->dim_W[1]);
-
-        //    printf("exiting sub_draw_beta\n");fflush(NULL);
-    }
-}
-
 
 void draw_pop_beta(POP *pop,SUB *sub,unsigned long *seed) {
-    double *P,*M;
-    
-    int N = pop->Ns*pop->Nb;
+    double *P,*M,*tmpM,*tmpP,*reprec;
+    int N = pop->Ncov*pop->Ns*pop->Nb;
+    int SB = pop->Ns*pop->Nb;
     M = (double *)calloc(N,sizeof(double));
+    tmpM = (double *)calloc(N,sizeof(double));
     P = (double *)calloc(N*N,sizeof(double));
-            
-    for (int is=0;is<pop->Ns;is++) {
+    tmpP = (double *)calloc(N*N,sizeof(double));
+    reprec = (double *)calloc(SB,sizeof(double));
+    for (int i=0;i<pop->Ns;i++)
+        for (int j=0;j<pop->Nb;j++)
+            reprec[i*pop->Nb+j] = pop->re_prec[i];
+
+    for (int isub=0;isub<pop->N_SUBS;isub++) {
+        calApVinvX(tmpM,sub[isub].X,sub[isub].beta,reprec,(const int)SB,(const int)N);
+        for (int i=0;i<N;i++)
+            M[i] += tmpM[i];
+    }
+
+    for (int isub=0;isub<pop->N_SUBS;isub++) {
+        calApVinvA(tmpP,sub[isub].X,reprec,(const int)SB,(const int)N);
+        for (int i=0;i<N;i++)
+            for (int j=0;j<N;j++)
+                P[i*N+j] += tmpP[i*N+j];
+    }
+    
+/*    for (int is=0;is<pop->Ns;is++) {
         for (int isub=0;isub<pop->N_SUBS;isub++) {
             for (int j=0;j<pop->Nb;j++) {
- //               for (int k=0;k<pop->Nb;k++) {
-                    M[j+is*pop->Nb] += pop->re_prec[j+is*pop->Nb]*sub[isub].beta[j+is*pop->Nb];
-                    P[(j+is*pop->Nb)*N + (j+is*pop->Nb)] += pop->re_prec[j+is*pop->Nb];
- //               }
+                P[(j+is*pop->Nb)*N + (j+is*pop->Nb)] += pop->re_prec[j+is*pop->Nb];
             }
         }
-    }
+    }*/
+
     for (int i=0;i<N;i++)
         P[i*N+i] += 0.01;
     int err = cholesky_decomp2vec(P,N);
@@ -1469,10 +1218,13 @@ void draw_pop_beta(POP *pop,SUB *sub,unsigned long *seed) {
         printf("error in draw_pop_beta, precision is not SPD\n");
         exit(0);
     }
-    
+    free(reprec);
     free(P);
     free(M);
+    free(tmpM);
+    free(tmpP);
 }
+
 
 
 void DIC(POP *pop,REP *rep,unsigned long *seed) {

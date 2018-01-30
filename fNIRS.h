@@ -41,7 +41,6 @@ typedef struct replication{
     double *V;
     double *Veta;
     double *mVeta;
-    double *XpX;
     double *lambda;
     double *H;
     double *J;
@@ -50,7 +49,6 @@ typedef struct replication{
       
     double *mdelta;
     double *mdelta2; 
-    double *mean_Y;
     double *mean_res;
     double *mean_d_Y;
     double *mean_fit;
@@ -68,7 +66,17 @@ typedef struct replication{
     int maxsteps;
     int nKnots;
     double *knots;
-    double *prbs;
+    
+    FILE *fout_eta;
+    FILE *fout_dlm;
+    FILE *fout_res;
+    FILE *fout_delta;
+    FILE *fout_nknots;
+    FILE *fout_knots;
+    FILE *fout_prec;
+    FILE *fout_wdelta;
+    FILE *fout_veta;
+    FILE *fout_fit;
 } REP;
 
 
@@ -76,25 +84,30 @@ typedef struct subdata{
     int N_REPS;
     double freq;
     REP *rep;
-    double *beta;  // subject level effects
+    double *beta;  // subject level effects  (Nb*Ns)
     double *conv_beta;  // converted subject level effects
 //    double precbeta;  // event level r.e. precision, one for each stimulus
     double *conv_precbeta;  // r.e. precision
+    int *dim_X;
+    double *X; // (Nb*Ns)x(Ncov*Nb*Ns)  covariate information for each subject
+    
+    FILE *fout_beta;
 } SUB;
 
 
 typedef struct popdata{
     int GRP;
     int N_SUBS;
+    int Ncov; // number of covariates, defaults to 1 for intercept
     int Nb;     // number of basis in the HRF
     int Ns;      // number of stimuli (or events)
     int non_parm; // canonical HRF = 0, non-parm B-SPlINE = 1
-    double expo;
+    int knots; // number of bspline bases
     double ED;
-    double **Q; // smoothing prec matrix for stimulus level r.e.
-    double **Q2; // smoothing prec matrix for low level drift
     SUB *sub;
-    double *beta;  // population level effects, one for each stimulus
-    double *re_prec; // sub level random effects, one for each stimulus
-    double priorprec_beta;
+    double *beta;  // population level effects, (Ncov*Nb*Ns)
+    double *re_prec; // sub level random effects, (Ns)x(Ns) diagonal
+    
+    FILE *fout_reprec;
+    FILE *fout_beta;
 } POP;

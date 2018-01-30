@@ -55,18 +55,6 @@ void draw_knot_locations(REP *rep,int sdegree,int *flag,unsigned long *seed)
            // attempt change of each interior knot in order
     j = runiform_n(rep->nKnots-sdegree*2,seed) + sdegree;    
 
-//    for (j=sdegree;j<rep->nKnots-sdegree;j++) {
-/*       int lprb=0;
-        for (k=0;k<rep->dim_V[0];k++) {
-            if (rep->knots[j] > k) {
-                lprb = j+1;
-                break;
-            }
-            else
-                lprb = rep->dim_V[0]-1;
-        }
-        double prb_old = rep->prbs[lprb] - rep->prbs[lprb-1];
- */       
         knots[j] = rnorm(knots[j],rep->prop_sd[3],seed);  // propose knot location
         for (i = sdegree;i<rep->nKnots-sdegree;i++){
             if (!(i==j)) {
@@ -81,17 +69,7 @@ void draw_knot_locations(REP *rep,int sdegree,int *flag,unsigned long *seed)
                 }
             } 
         }
- /*       lprb=0;
-        for (k=0;k<rep->dim_V[0];k++) {
-            if (rep->knots[j] > k) {
-                lprb = j+1;
-                break;
-            }
-            else
-                lprb = rep->dim_V[0]-1;
-        }
-        double prb_new = rep->prbs[lprb] - rep->prbs[lprb-1];
-*/
+
         (rep->attempt[3])++;
 
         if (knots[j] > 0 && knots[j] < rep->dim_V[0]-1) {  // ensure knot is still interior knot
@@ -322,9 +300,7 @@ void birth(REP *rep,POP *pop,double *full_likelihood,unsigned long *seed) {
                     return;
          }
     }
-    //            position = (double)rmultinomial(rep->prbs,rep->dim_V[0],seed);
-    //            position = runif_atob(seed,position-1,position);
-    /* simulate eta from its full cond */
+     /* simulate eta from its full cond */
  
     VV = (double *)calloc(rep->dim_V[0]*(rep->dim_V[1]+1),sizeof(double));
 //    for (i=0;i<rep->dim_V[0];i++)
@@ -487,8 +463,8 @@ int knot_birth_death(REP *rep,POP *pop,const int sdegree,int iter,unsigned long 
     
     // set simulation time
 
-    prior_rate = 15;//rgamma(30,1,seed); // prior on number of knots given prior_rate is Poisson(prior_rate).  This results in a neg binomial prior.
-    Birth_rate = 15;
+    prior_rate = pop->knots;//rgamma(30,1,seed); // prior on number of knots given prior_rate is Poisson(prior_rate).  This results in a neg binomial prior.
+    Birth_rate = prior_rate;
     T= 1./Birth_rate;
     T = 1;
     calculate_residuals(rep,rep->P);

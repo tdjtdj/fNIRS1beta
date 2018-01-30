@@ -2,6 +2,8 @@
 #include <stdlib.h>
 #include <math.h>
 
+extern FILE *flog;
+
 double *create_bspline_basis(int N,double TIME,double freq,int int_knots,int *dim,double *knots,int type)
 {
     int i,ii,j,k,*beg,num;
@@ -16,9 +18,9 @@ double *create_bspline_basis(int N,double TIME,double freq,int int_knots,int *di
     dim[0] = N;
     dim[1] = nknots - sdegree;
     
-    printf("Time = %lf freq = %lf\n",TIME,freq);
-    printf("int_knots = %d nknots = %d\n",int_knots,nknots);
-    printf("dim = %d %d\n",dim[0],dim[1]);
+    fprintf(flog,"Time = %lf freq = %lf\n",TIME,freq);
+    fprintf(flog,"int_knots = %d nknots = %d\n",int_knots,nknots);
+    fprintf(flog,"dim = %d %d\n",dim[0],dim[1]);
 
     switch (type) {
         case 0: default: // Not a knot condition
@@ -102,7 +104,7 @@ double *create_bspline_basis(int N,double TIME,double freq,int int_knots,int *di
 //    for (i=0;i<N;i++)
 //        Y[i] = (double *)calloc(nknots-sdegree,sizeof(double));
     
-    printf("%d %d %d\n",nknots-sdegree,dim[1],int_knots);
+    fprintf(flog,"%d %d %d\n",nknots-sdegree,dim[1],int_knots);
     for (i=0;i<N;i++) {
         bsplinebasis(0,0,sdegree,data[i],knots,nknots,&Y[i*(nknots-sdegree)]);
     }
