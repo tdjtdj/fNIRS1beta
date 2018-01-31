@@ -71,7 +71,7 @@ void mcmc(POP *pop,unsigned long *seed) {
     void calWdelta(double *Ax,double *A,double *x,const int nrow,const int ncol);
     void calW(double *W,double *Y,double *Xb,double *Ve,const int nrow,const int ncol,const int P);
     
-    void draw_beta_eta(POP *pop,SUB *sub,REP *rep,unsigned long *seed,int iter);
+    void draw_beta_eta(POP *pop,SUB *sub,REP *rep,unsigned long *seed,int iter,int isub);
     void draw_pop_beta(POP *pop,SUB *sub,unsigned long *seed);
     
     void DIC(POP *pop,REP *rep,unsigned long *seed);
@@ -92,7 +92,7 @@ void mcmc(POP *pop,unsigned long *seed) {
             for (irep=0;irep<pop->sub[isub].N_REPS;irep++) {
 //printf("A\n");fflush(stdout);
                 if (iter == 0)
-                    draw_beta_eta(pop,&(pop->sub[isub]),&(pop->sub[isub].rep[irep]),seed,iter);
+                    draw_beta_eta(pop,&(pop->sub[isub]),&(pop->sub[isub].rep[irep]),seed,iter,isub);
 //printf("B %d\n",pop->sub[isub].rep[irep].nKnots);fflush(stdout);
                 aaa = knot_birth_death(&(pop->sub[isub].rep[irep]),pop,sdegree,iter,seed);
 //printf("C\n");fflush(stdout);
@@ -114,7 +114,7 @@ void mcmc(POP *pop,unsigned long *seed) {
 //                        draw_precYstart(&(pop->sub[isub].rep[irep]),pop->P,seed);
                     }
                 }
-                draw_beta_eta(pop,&(pop->sub[isub]),&(pop->sub[isub].rep[irep]),seed,iter);
+                draw_beta_eta(pop,&(pop->sub[isub]),&(pop->sub[isub].rep[irep]),seed,iter,isub);
                 if ((pop->sub[isub].rep[irep].dim_W[1] > 0) && (iter > -1)) {
                     DLMtst(&(pop->sub[isub].rep[irep]),iter,0,seed);
                     DLMtst(&(pop->sub[isub].rep[irep]),iter,1,seed);
@@ -494,8 +494,8 @@ void calculate_res5(REP *rep,int P) {
 void draw_preceta(REP *rep,unsigned long *seed) {
     double ALPHA=0, BETA=0;
     double a, b;
-    ALPHA = 1.1;
-    BETA =  1.1;
+    ALPHA = 5;
+    BETA =  5;
     b = 0;
     
     for (int i=0;i<rep->dim_V[1];i++)
@@ -513,8 +513,8 @@ void draw_reprec(POP *pop,SUB *sub,unsigned long *seed) {
     double ALPHA, BETA,tmp;
     double *Xb;
 
-    ALPHA = 1.1;//10;
-    BETA  = 1.1;//10;
+    ALPHA = 5;//10;
+    BETA  = 5;//10;
         
     Xb = (double *)calloc(pop->Ns*pop->Nb,sizeof(double));
     for (int is=0;is<pop->Ns;is++) {
@@ -1025,7 +1025,7 @@ void DLM(REP *rep,int P,unsigned long *seed) {
 
 }
 
-void draw_beta_eta(POP *pop,SUB *sub,REP *rep,unsigned long *seed,int iter) {
+void draw_beta_eta(POP *pop,SUB *sub,REP *rep,unsigned long *seed,int iter,int isub) {
     int i,j,ncol;
     double *M,*YY,*V,*VpV,*J,*X,*betaeta;
 
@@ -1132,17 +1132,20 @@ void draw_beta_eta(POP *pop,SUB *sub,REP *rep,unsigned long *seed,int iter) {
     }
     else {
         printf("error in draw_beta_eta, precision is not SPD\n");
-        fprintf(flog,"iter = %d\n",iter);
+        fprintf(flog,"iter = %d, dim_X[1] = %d dim_V[1] = %d sub = %d\n",iter,rep->dim_X[1],rep->dim_V[1],isub);
         for (i=0;i<pop->Ns;i++)
             fprintf(flog,"re_prec = %lf\n",pop->re_prec[i]);
         fprintf(flog,"rep->preceta = %lf\n",rep->preceta);
         fprintf(flog,"\n");
         for (i=0;i<ncol;i++) {
             for (j=0;j<ncol;j++)
-                fprintf(flog,"%lf ",V[i*ncol+j]);
+                fprintf(flog,"%lf, ",V[i*ncol+j]);
             fprintf(flog,"\n");
         }
         fprintf(flog,"\n");
+        for (i=0;i<rep->dim_V[1];i++)
+            fprintf(flog,"%lf \n",rep->eta[i]);
+        fprintf(flog,"\n\n");
         exit(0);
     }
 
