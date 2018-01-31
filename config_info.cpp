@@ -424,7 +424,7 @@ void load_data_structs(POP *pop,int PPP)
             
             pop->sub[isub].rep[irep].dim_V = (int *)calloc(2,sizeof(int));
             
-            pop->sub[isub].rep[irep].nKnots = 15;
+            pop->sub[isub].rep[irep].nKnots = pop->knots;
             pop->sub[isub].rep[irep].knots = (double *)calloc(pop->sub[isub].rep[irep].nKnots+6,sizeof(double));
             
             pop->sub[isub].rep[irep].V = create_bspline_basis(N,T,pop->sub[isub].freq,pop->sub[isub].rep[irep].nKnots,pop->sub[isub].rep[irep].dim_V,pop->sub[isub].rep[irep].knots,0);
