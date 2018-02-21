@@ -10,7 +10,7 @@
 double M;
 int PREC = 64;
 sDLM *dlmStruc;
-int maxP = 80;
+int maxP = 100;
 int MAX_ITER = 7500;
 int BURN_IN = 2500;
 FILE *flog,*fseed;
@@ -32,7 +32,7 @@ int main (int argc, const char * argv[]) {
 
     seed = (unsigned long *)calloc(3,sizeof(unsigned long));
     pop = (POP *)calloc(1,sizeof(POP));
-    PPP = 5;  // starting AR degree 
+    PPP = 15;  // starting AR degree 
     
     int iss = system("mkdir -p log"); 
     flog = fopen("./log/output.log","w");

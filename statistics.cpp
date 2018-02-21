@@ -4,8 +4,24 @@
 #include <string.h>
 #include "fNIRS.h"
 
-
 extern FILE *flog;
+
+double dens_gamma(double x,double alpha,double beta) {
+    double ll;
+    
+    ll = alpha*log(beta) - lgamma(alpha) + (alpha-1)*log(x) - beta*x;
+        
+    return ll;
+}
+
+double tden(double x,double mean,double var,double df) {
+    double tmp,value = 0;
+    double pi = 3.14159;
+    
+    tmp = (x-mean)*(x-mean)/var;
+    value = lgamma(0.5*(df+1)) - lgamma(0.5*df) - 0.5*log(df*pi*var) - 0.5*(df+1)*log1p(tmp/df);
+    return value;
+}
 
 int compdbl(const void *c1,const void *c2) // compares two doubles, used in qsort
 {
@@ -31,6 +47,14 @@ void compute_mean_sd(double *mean,double *sd,const double *x,const int len) {
     N = (double)len;
     *mean /= N;
     *sd = sqrt((N/(N-1))*(*sd/N - *mean* *mean));
+}
+
+void standardize_data(double *x,const int N) {
+    double mean,sd;
+    
+    compute_mean_sd(&mean,&sd,(const double *)x,N);
+    for (int i=0;i<N;i++)
+        x[i] = (x[i] - mean)/sd;
 }
 
 void compute_quantile(double *quantile,const double prob,const double *x,const int len) {

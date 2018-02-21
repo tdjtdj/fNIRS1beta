@@ -1,8 +1,8 @@
-SRC = main.cpp mcmc.cpp cholesky.cpp randgen.cpp mybspline.cpp hrf.cpp cpoly.cpp knots.cpp statistics.cpp config_info.cpp
-OBJ = main.o mcmc.o cholesky.o randgen.o mybspline.o hrf.o cpoly.o knots.o statistics.o config_info.o
+SRC = main.cpp mcmc.cpp cholesky.cpp randgen.cpp mybspline.cpp hrf.cpp knots.cpp statistics.cpp config_info.cpp dlm.cpp
+OBJ = main.o mcmc.o cholesky.o randgen.o mybspline.o hrf.o knots.o statistics.o config_info.o dlm.o
 CFLAGS = -O3
 LFLAGS = 
-LIBS = -lm -lfftw3_threads -lfftw3 -lpthread
+LIBS = -lm -lfftw3
 gp : ${OBJ} 
 	g++ -o foo ${OBJ} ${LIBS}
 

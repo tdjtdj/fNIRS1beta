@@ -1,6 +1,9 @@
+enum dlm_tst_flag {fdelta1,fdelta2,fP};
 
 typedef struct dlm{
     double S;
+    double n;
+    double d;
     double *a;
     double *m;
     double *C;
@@ -32,10 +35,13 @@ typedef struct replication{
     double *eta;
     double preceta;
     double *delta;
+    double *m;
     double precdelta;
     double *Xbeta;
+    double *mXbeta;
     double *Wdelta;
     double *mWdelta;
+    double *Wm;
     double *X;
     double *W;
     double *V;
@@ -52,7 +58,9 @@ typedef struct replication{
     double *mean_res;
     double *mean_d_Y;
     double *mean_fit;
-    double mean_precY;
+    double md1;
+    double md2;
+    int    *tableP;
     double *residuals;
     double *residuals1;
     double *residuals2;
@@ -77,6 +85,10 @@ typedef struct replication{
     FILE *fout_wdelta;
     FILE *fout_veta;
     FILE *fout_fit;
+    FILE *fout_X;
+    FILE *fout_Y;
+    FILE *fout_HRF;
+    FILE *fout_Xbeta;
 } REP;
 
 

@@ -58,7 +58,7 @@ void draw_knot_locations(REP *rep,int sdegree,int *flag,unsigned long *seed)
         knots[j] = rnorm(knots[j],rep->prop_sd[3],seed);  // propose knot location
         for (i = sdegree;i<rep->nKnots-sdegree;i++){
             if (!(i==j)) {
-                if (fabs(knots[j]-knots[i]) < 0.1) {
+                if (fabs(knots[j]-knots[i]) < 0.0001) {
                     free(V);
                     free(eta);
                     free(eta2);
@@ -168,11 +168,12 @@ void draw_knot_locations(REP *rep,int sdegree,int *flag,unsigned long *seed)
     }
 
 
-    calculate_residuals(rep,rep->P);
     calAx(rep->Veta,rep->V,rep->eta,(const int)rep->dim_V[0],(const int)(rep->dim_V[1]));
 
     calW(rep->W,rep->Y,rep->Xbeta,rep->Veta,(const int)rep->dim_W[0],(const int)rep->dim_W[1],rep->P);
     calWdelta(rep->Wdelta,rep->W,rep->delta,(const int)rep->dim_W[0],(const int)rep->dim_W[1]);
+
+    calculate_residuals(rep,rep->P);
 
     // free allocated scratch memory
     
@@ -463,9 +464,9 @@ int knot_birth_death(REP *rep,POP *pop,const int sdegree,int iter,unsigned long 
     
     // set simulation time
 
-    prior_rate = pop->knots;//rgamma(30,1,seed); // prior on number of knots given prior_rate is Poisson(prior_rate).  This results in a neg binomial prior.
-    Birth_rate = prior_rate;
-    T= 1./Birth_rate;
+    prior_rate = pop->knots;//rgamma(pop->knots,1,seed); 
+    Birth_rate = 15;//prior_rate;
+ //   T= 1./Birth_rate;
     T = 1;
     calculate_residuals(rep,rep->P);
     
@@ -510,7 +511,8 @@ int knot_birth_death(REP *rep,POP *pop,const int sdegree,int iter,unsigned long 
         
         else { /* a death occurs */
             /* remove a knot */
-            death(death_rate,rep,pop,&full_likelihood,4,seed);
+            if (rep->nKnots-2*sdegree > 1) 
+                death(death_rate,rep,pop,&full_likelihood,4,seed);
         }
         if (dflag) {
             free(death_rate);
@@ -533,7 +535,7 @@ void knot_death_rate(double *death_rate,REP *rep,double *partial_likelihood,doub
     if (nKnots > 0) {
         for (i=0;i<nKnots;i++) {
             death_rate[i] = log(Birth_rate/prior_rate) + partial_likelihood[i] - full_likelihood; //+ ldens[i] - prior_ldens[i] + log(rep->dim_V[0]-1);
-//            printf("%lf %lf %lf %lf %lf\n",partial_likelihood[i],full_likelihood,ldens[i],prior_ldens[i],death_rate[i]);
+//            printf("%g %g %g\n",partial_likelihood[i],full_likelihood,death_rate[i]);
         }
     }
     else {

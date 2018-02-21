@@ -207,12 +207,11 @@ double *convolve(double **design,double **hrf,int *dim_design,int *dim_hrf)
     XYZ1 = (fftw_complex *)fftw_malloc(m*sizeof(fftw_complex));
     XYZ2 = (fftw_complex *)fftw_malloc(m*sizeof(fftw_complex));
 
-    if (!fftw_init_threads()) {
-        printf("threads not initialized\n");
+/*    if (!fftw_init_threads()) {
         exit(0);
     }
     int nthreads = 4;
-    fftw_plan_with_nthreads(nthreads);
+    fftw_plan_with_nthreads(nthreads);*/
 
     setup_fwd1 = fftw_plan_dft_1d(m,XYZ1,XYZ1,FFTW_FORWARD,FFTW_MEASURE);
     setup_fwd2 = fftw_plan_dft_1d(m,XYZ2,XYZ2,FFTW_FORWARD,FFTW_MEASURE);

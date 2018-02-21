@@ -4,6 +4,7 @@
 #include <string.h>
 #include "fNIRS.h"
 
+int max_dimX;
 extern int maxP;
 extern int MAX_ITER;
 extern int BURN_IN;
@@ -22,10 +23,12 @@ void load_config_info(POP *pop,const char *config_file,unsigned long *seed)
     int ides=0;
     double yin;
     char *S,*C,*covarMat;
-    FILE *fconfig,*fcovar;
+    SUB *sub;
+    REP *rep;
+    FILE *fconfig,*fcovar=NULL;
 
     void center_covars(double *X,const int nrow,const int ncol); 
-    
+   
     S = (char *)malloc(1000*sizeof(char));
     fconfig = fopen(config_file,"r");
 
@@ -194,7 +197,7 @@ void load_config_info(POP *pop,const char *config_file,unsigned long *seed)
         pop->GRP = 0;
      
  
-    if (pop->GRP) {
+   if (pop->GRP) {
         fcovar = fopen(covarMat,"r");
         if (fcovar == NULL) {
             printf("A covariance matrix is missing.\n");
@@ -222,17 +225,18 @@ void load_config_info(POP *pop,const char *config_file,unsigned long *seed)
                 int ifs = fscanf(fcovar,"%lf ",&covars[isub*pop->Ncov + j]);
         center_covars(covars,(const int)pop->N_SUBS,(const int)pop->Ncov);
         for (isub=0;isub<pop->N_SUBS;isub++) {
-            pop->sub[isub].dim_X = (int *)calloc(2,sizeof(int));
-            pop->sub[isub].dim_X[0] = pop->Nb*pop->Ns;
-            pop->sub[isub].dim_X[1] = pop->Ncov*pop->Nb*pop->Ns;
-            pop->sub[isub].X = (double *)calloc(pop->sub[isub].dim_X[0]*pop->sub[isub].dim_X[1],sizeof(double));
-            for (int i=0;i<pop->sub[isub].dim_X[0];i++)
+            sub = &(pop->sub[isub]);
+            sub->dim_X = (int *)calloc(2,sizeof(int));
+            sub->dim_X[0] = pop->Nb*pop->Ns;
+            sub->dim_X[1] = pop->Ncov*pop->Nb*pop->Ns;
+            sub->X = (double *)calloc(sub->dim_X[0]*sub->dim_X[1],sizeof(double));
+            for (int i=0;i<sub->dim_X[0];i++)
                 for (int j=0;j<pop->Ncov;j++) {
-                    pop->sub[isub].X[(j+i*pop->Ncov)+i*pop->sub[isub].dim_X[1]] = covars[isub*pop->Ncov+j];
+                    sub->X[(j+i*pop->Ncov)+i*sub->dim_X[1]] = covars[isub*pop->Ncov+j];
                 }
-            for (int i=0;i<pop->sub[isub].dim_X[0];i++) {
-                for (int j=0;j<pop->sub[isub].dim_X[1];j++)
-                    fprintf(flog,"%lf ",pop->sub[isub].X[i*pop->sub[isub].dim_X[1]+j]);
+            for (int i=0;i<sub->dim_X[0];i++) {
+                for (int j=0;j<sub->dim_X[1];j++)
+                    fprintf(flog,"%lf ",sub->X[i*sub->dim_X[1]+j]);
                 fprintf(flog,"\n");
             }
             fprintf(flog,"\n");
@@ -243,9 +247,7 @@ void load_config_info(POP *pop,const char *config_file,unsigned long *seed)
     else {
         pop->Ncov = 1;
     }
-    if (covarMat)
-        free(covarMat);
-       
+     
     pop->beta = (double *)calloc(pop->Ncov*pop->Nb*pop->Ns,sizeof(double));
     pop->re_prec = (double *)calloc(pop->Ns,sizeof(double));
     for (int i=0;i<pop->Ns;i++)
@@ -260,12 +262,20 @@ void load_config_info(POP *pop,const char *config_file,unsigned long *seed)
             for (int k=0;k<pop->Ns;k++) {
                 fprintf(flog,"pop.sub[%d].rep[%d].Ne[%d] = %d\n",i,j,k,pop->sub[i].rep[j].Ne[k]);
             }*/
-    for (int i=0;i<pop->N_SUBS;i++)
-        for (int j=0;j<pop->sub[i].N_REPS;j++)
-            fprintf(flog,"pop.sub[%d].rep[%d].dataname = %s\n",i,j,pop->sub[i].rep[j].dataname);
-    for (int i=0;i<pop->N_SUBS;i++)
-        for (int j=0;j<pop->sub[i].N_REPS;j++)
-            fprintf(flog,"pop.sub[%d].rep[%d].designname = %s\n",i,j,pop->sub[i].rep[j].designname);
+    for (int i=0;i<pop->N_SUBS;i++) {
+        sub = &(pop->sub[i]);
+        for (int j=0;j<sub->N_REPS;j++) {
+            rep = &(sub->rep[j]);
+            fprintf(flog,"pop.sub[%d].rep[%d].dataname = %s\n",i,j,rep->dataname);
+        }
+    }
+    for (int i=0;i<pop->N_SUBS;i++) {
+        sub = &(pop->sub[i]);
+        for (int j=0;j<sub->N_REPS;j++) {
+            rep = &(sub->rep[j]);
+            fprintf(flog,"pop.sub[%d].rep[%d].designname = %s\n",i,j,rep->designname);
+        }
+    }
     fprintf(flog,"non_parm = %d\n",pop->non_parm);
     fprintf(flog,"Nb = %d\n",pop->Nb);
 }
@@ -276,15 +286,17 @@ void load_data_structs(POP *pop,int PPP)
     int *dim_design,*dim_HRF;
     double yin,**HRF;
     char *S,*C;
+    SUB *sub;
+    REP *rep;
     FILE *fout;
     
     void itoa(int n,char s[]);
-    double *DCT_basis(int N,double T,int period,int *K);
     double *create_bspline_basis(int N,double TIME,double freq,int int_knots,int *dim_HRF,double *knots,int type);
     double **canonical_HRF(int T,double freq,int *dim_HRF,int type);
     double *convolve(double **design,double **hrf,int *dim_design,int *dim_hrf);
-    void setup_fft(REP *rep,const int P);
-    void compute_dist_mat(double *dist,int dim,int *m,int *n,double freq);
+    double *subsample_data(double *old_TS,int len,int *sublen,double true_freq,double samp_freq);
+    double *subsample_design(double *mat,int len,int ncol,int *sublen,double true_freq,double samp_freq);
+    void standardize_data(double *x,const int len);       
 
     S = (char *)calloc(300,sizeof(char));
     C = (char *)calloc(300,sizeof(char));
@@ -297,124 +309,108 @@ void load_data_structs(POP *pop,int PPP)
  /*** OPEN TIME SERIES FILE AND READ DATA ***/
  
     for (int isub=0;isub<pop->N_SUBS;isub++) {
-        for (int irep=0;irep<pop->sub[isub].N_REPS;irep++) {
-            pop->sub[isub].rep[irep].P = PPP;
-            pop->sub[isub].rep[irep].df_delta1 = 0.975;
-            pop->sub[isub].rep[irep].df_delta2 = 0.975;
+        sub = &(pop->sub[isub]);
+        for (int irep=0;irep<sub->N_REPS;irep++) {
+            rep = &(sub->rep[irep]);
+            
+            rep->P = PPP;
+            rep->df_delta1 = 0.999;
+            rep->df_delta2 = 0.98;
       
-            fprintf(flog,"%s\n",pop->sub[isub].rep[irep].dataname);fflush(flog);
-            fout = fopen(pop->sub[isub].rep[irep].dataname,"r");
+            fprintf(flog,"%s\n",rep->dataname);fflush(flog);
+            fout = fopen(rep->dataname,"r");
  
             N = 0;
             while (fscanf(fout,"%lf ",&(yin)) != EOF)
                 N++;
            
-            pop->sub[isub].rep[irep].Y = (double *)calloc(N,sizeof(double));
+            rep->Y = (double *)calloc(N,sizeof(double));
             rewind(fout);
             
             for (int i=0;i<N;i++)
-                int ifs = fscanf(fout,"%lf ",&(pop->sub[isub].rep[irep].Y[i]));
+                int ifs = fscanf(fout,"%lf ",&(rep->Y[i]));
             
             fclose(fout);
-
-             
-            // Rescale TS
- 
-            double sdY = 0;
-            double meanY = 0;
-            for (int i=0;i<N;i++)
-                meanY += pop->sub[isub].rep[irep].Y[i];
-            meanY /= N;
-            for (int i=0;i<N;i++)
-                sdY += (pop->sub[isub].rep[irep].Y[i]-meanY)*(pop->sub[isub].rep[irep].Y[i]-meanY);
-            sdY = sqrt(sdY/(N-1));
-            for (int i=0;i<N;i++)
-                pop->sub[isub].rep[irep].Y[i] = (pop->sub[isub].rep[irep].Y[i] - meanY)/sdY;
-
-            /********************************************/
-            /*** CONVOLVE DESIGN MATRIX WITH HRF ***/
-            HRF = canonical_HRF(35,pop->sub[isub].freq,dim_HRF,pop->Nb-1);
-            pop->Nb = dim_HRF[1];
- 
-            fout = fopen("./log/HRF.log","w");
-            for (int i=0;i<dim_HRF[0];i++) {
-                for (int j=0;j<dim_HRF[1];j++)
-                    fprintf(fout,"%lf ",HRF[i][j]);
-                fprintf(fout,"\n");
-            }
-            fclose(fout);
-            dim_design[0] = N;
             
-            fout = fopen(pop->sub[isub].rep[irep].designname,"r");
-            fprintf(flog,"%s\n",pop->sub[isub].rep[irep].designname);fflush(stdout);
+            fout = fopen(rep->designname,"r");
+            fprintf(flog,"%s\n",rep->designname);fflush(flog);
             int cnt=0;
             while (fscanf(fout,"%lf ",&yin) != EOF)
                 cnt++;
             
             rewind(fout);
             
+            dim_design[0] = N;
             dim_design[1] = cnt/(N);
         
-            double **design2;
-            design2 = (double **)calloc(dim_design[0],sizeof(double *));
-            for (int i=0;i<dim_design[0];i++)
-                design2[i] = (double *)calloc(dim_design[1],sizeof(double));
-            for (int i=0;i<dim_design[0];i++)
+            double **design;
+            design = (double **)calloc(N,sizeof(double *));
+            for (int i=0;i<N;i++)
+                design[i] = (double *)calloc(dim_design[1],sizeof(double));
+            for (int i=0;i<N;i++)
                 for (int j=0;j<dim_design[1];j++)
-                    int ifs = fscanf(fout,"%lf ",&(design2[i][j]));
+                    int ifs = fscanf(fout,"%lf ",&(design[i][j]));
         
             fclose(fout);
 
-            pop->sub[isub].rep[irep].X = convolve(design2,HRF,dim_design,dim_HRF);
+            // CONVOLVE DESIGN MATRIX WITH HRF
+            HRF = canonical_HRF(35,sub->freq,dim_HRF,pop->Nb-1);
+            pop->Nb = dim_HRF[1];
+ 
+            rep->X = convolve(design,HRF,dim_design,dim_HRF);
+  
+            for (int i=0;i<N;i++)
+                free(design[i]);
+            free(design);
+ 
+            // subsample data and design
             
+            int sfreq = 10;
+            if (sub->freq > sfreq) {
+                int subN;
 
-            for (int i=0;i<dim_design[0];i++)
-                free(design2[i]);
-            free(design2);
+                double *XXX,*Y;        
+                XXX = subsample_design(rep->X,N,dim_design[1]*dim_HRF[1],&subN,sub->freq,sfreq); 
+                free(rep->X);
+                rep->X = XXX;
+ 
+
+                Y = subsample_data(rep->Y,N,&subN,sub->freq,sfreq);
+
+                free(rep->Y);
+                rep->Y = Y;
+                sub->freq = sub->freq/round(sub->freq/sfreq);
+                N = subN;
+            }
             
-            pop->sub[isub].rep[irep].dim_X = (int *)calloc(2,sizeof(int));
-            pop->sub[isub].rep[irep].dim_X[0] = dim_design[0];
-            pop->sub[isub].rep[irep].dim_X[1] = dim_design[1]*dim_HRF[1];
+            dim_design[0] = N;
+            rep->dim_X = (int *)calloc(2,sizeof(int));
+            rep->dim_X[0] = N;
+            rep->dim_X[1] = dim_design[1]*dim_HRF[1];
 
+            // standardize TS
+
+            standardize_data(rep->Y,(const int)N);
+
+            // rescale design matrix
             
             double max = 0;
             double tmp = 0;
 
-            for (int j=0;j<dim_design[1]*dim_HRF[1];j++) { // normalize
+            for (int j=0;j<rep->dim_X[1];j++) { // normalize
                 tmp = 0;
-                for (int i=0;i<dim_design[0];i++)
-                    tmp = (tmp > pop->sub[isub].rep[irep].X[i*dim_design[1]*dim_HRF[1]+j]) ? tmp:pop->sub[isub].rep[irep].X[i*dim_design[1]*dim_HRF[1]+j];
- //                  tmp += pop->sub[isub].rep[irep].X[i][j]*pop->sub[isub].rep[irep].X[i][j];
+                for (int i=0;i<rep->dim_X[0];i++)
+                    tmp = (tmp > rep->X[i*rep->dim_X[1]+j]) ? tmp:rep->X[i*rep->dim_X[1]+j];
+ //                  tmp += rep->X[i*rep->dim_X[1]+j]*rep->X[i*rep->dim_X[1]+j];
  //                  tmp = sqrt(tmp);
                 max = (tmp > max) ? tmp:max;
             }
-            for (int j=0;j<dim_design[1]*dim_HRF[1];j++) { // normalize
-                for (int i=0;i<dim_design[0];i++)
-                    pop->sub[isub].rep[irep].X[i*dim_design[1]*dim_HRF[1]+j] /= max;
+            for (int j=0;j<rep->dim_X[1];j++) { // normalize
+                for (int i=0;i<rep->dim_X[0];i++)
+                    rep->X[i*rep->dim_X[1]+j] /= max;
             }
             
-            fprintf(flog,"max = %lf\n",max);fflush(stdout);
-            char *CC = (char *)malloc(3*sizeof(char));
-            S = strcpy(S,"./log/X");
-            itoa(isub,CC);
-            S = strcat(S,CC);
-            itoa(irep,CC);
-            S = strcat(S,CC);
-            free(CC);
-            S = strcat(S,".log");
-            //printf("S: %s\n",S);
-            fout = fopen(S,"w");
-            for (int i=0;i<pop->sub[isub].rep[irep].dim_X[0];i++) {
-                for (int j=0;j<pop->sub[isub].rep[irep].dim_X[1];j++) {
-                    fprintf(fout,"%.20lf ",pop->sub[isub].rep[irep].X[i*dim_design[1]*dim_HRF[1]+j]);
-                }
-                fprintf(fout,"\n");
-            }
-            fclose(fout);
-      
-            for (int i=0;i<dim_HRF[0];i++)
-                free(HRF[i]);
-            free(HRF);
+            fprintf(flog,"max = %lf\n",max);fflush(stdout);      
            
   
             /*** CREATE Initial B-Spline BASIS TO REMOVE LOW FREQUENCY DRIFT ***/
@@ -424,7 +420,7 @@ void load_data_structs(POP *pop,int PPP)
             
             pop->sub[isub].rep[irep].dim_V = (int *)calloc(2,sizeof(int));
             
-            pop->sub[isub].rep[irep].nKnots = pop->knots;
+            pop->sub[isub].rep[irep].nKnots = pop->knots + 2;
             pop->sub[isub].rep[irep].knots = (double *)calloc(pop->sub[isub].rep[irep].nKnots+6,sizeof(double));
             
             pop->sub[isub].rep[irep].V = create_bspline_basis(N,T,pop->sub[isub].freq,pop->sub[isub].rep[irep].nKnots,pop->sub[isub].rep[irep].dim_V,pop->sub[isub].rep[irep].knots,0);
@@ -434,10 +430,10 @@ void load_data_structs(POP *pop,int PPP)
             fprintf(flog,"NKNOTS = %d, dim_V[1] = %d\n",pop->sub[isub].rep[irep].nKnots,pop->sub[isub].rep[irep].dim_V[1]);
             for (int i=0;i<pop->sub[isub].rep[irep].nKnots;i++)
                 fprintf(flog,"%lf ",pop->sub[isub].rep[irep].knots[i]);
-                fprintf(flog,"\n");
+            fprintf(flog,"\n");
            
             
-            /*** AR TERMS ***/
+            /*** initialize TVAR TERMS ***/
             
             
             pop->sub[isub].rep[irep].dim_W = (int *)calloc(2,sizeof(int));
@@ -445,13 +441,18 @@ void load_data_structs(POP *pop,int PPP)
             pop->sub[isub].rep[irep].dim_W[1] = PPP;
             
             pop->sub[isub].rep[irep].W = (double *)calloc(N*maxP,sizeof(double)); // needed to select DLM hyperpriors
+            pop->sub[isub].rep[irep].tableP = (int *)calloc(maxP+1,sizeof(int));
+            pop->sub[isub].rep[irep].md1 = 0;
+            pop->sub[isub].rep[irep].md2 = 0;
             
             for (int i=PPP;i<N;i++) {
                 for (int j=0;j<PPP;j++) {
                     pop->sub[isub].rep[irep].W[i*PPP + PPP-j-1] = pop->sub[isub].rep[irep].Y[i+j-PPP];
                 }
             }
-                       
+            
+            /*** intialize remaining data ***/
+            
             pop->sub[isub].rep[irep].residuals = (double *)calloc(pop->sub[isub].rep[irep].dim_X[0],sizeof(double));
             pop->sub[isub].rep[irep].residuals1 = (double *)calloc(pop->sub[isub].rep[irep].dim_X[0],sizeof(double));
             pop->sub[isub].rep[irep].residuals2 = (double *)calloc(pop->sub[isub].rep[irep].dim_X[0],sizeof(double));
@@ -466,15 +467,18 @@ void load_data_structs(POP *pop,int PPP)
             pop->sub[isub].rep[irep].mVeta = (double *)calloc(pop->sub[isub].rep[irep].dim_V[0],sizeof(double));
  
             pop->sub[isub].rep[irep].delta = (double *)calloc(pop->sub[isub].rep[irep].dim_W[0]*maxP,sizeof(double));
+            pop->sub[isub].rep[irep].m = (double *)calloc(pop->sub[isub].rep[irep].dim_W[0]*maxP,sizeof(double));
 
             pop->sub[isub].rep[irep].mdelta = (double *)calloc(pop->sub[isub].rep[irep].dim_W[0]*maxP,sizeof(double));
 
             pop->sub[isub].rep[irep].mdelta2 = (double *)calloc(pop->sub[isub].rep[irep].dim_W[0]*maxP,sizeof(double));
  
             pop->sub[isub].rep[irep].Wdelta = (double *)calloc(pop->sub[isub].rep[irep].dim_W[0],sizeof(double));
+            pop->sub[isub].rep[irep].Wm = (double *)calloc(pop->sub[isub].rep[irep].dim_W[0],sizeof(double));
             pop->sub[isub].rep[irep].mWdelta = (double *)calloc(pop->sub[isub].rep[irep].dim_W[0],sizeof(double));
 
             pop->sub[isub].rep[irep].Xbeta = (double *)calloc(pop->sub[isub].rep[irep].dim_X[0],sizeof(double));
+            pop->sub[isub].rep[irep].mXbeta = (double *)calloc(pop->sub[isub].rep[irep].dim_V[0],sizeof(double));
             pop->sub[isub].rep[irep].Hbeta = (double *)calloc(pop->sub[isub].rep[irep].dim_X[0],sizeof(double));
             pop->sub[isub].rep[irep].H = (double *)calloc(pop->sub[isub].rep[irep].dim_X[0]*pop->sub[isub].rep[irep].dim_X[1],sizeof(double));
             
@@ -485,7 +489,7 @@ void load_data_structs(POP *pop,int PPP)
             pop->sub[isub].rep[irep].d_Y = (double *)calloc(pop->sub[isub].rep[irep].dim_X[0],sizeof(double));
             pop->sub[isub].rep[irep].md_Y = (double *)calloc(pop->sub[isub].rep[irep].dim_X[0],sizeof(double));
             pop->sub[isub].rep[irep].sd_Y = (double *)calloc(pop->sub[isub].rep[irep].dim_X[0],sizeof(double));
-            for (int i=PPP;i<pop->sub[isub].rep[irep].dim_X[0];i++)
+            for (int i=0;i<pop->sub[isub].rep[irep].dim_X[0];i++)
                 pop->sub[isub].rep[irep].d_Y[i] = 1;
              
             pop->sub[isub].rep[irep].K = 1;
@@ -493,19 +497,21 @@ void load_data_structs(POP *pop,int PPP)
             pop->sub[isub].rep[irep].precdelta = 100.;
             pop->sub[isub].rep[irep].LY = 1./16.;
             pop->sub[isub].rep[irep].precYstart = 1;
-            pop->sub[isub].rep[irep].mean_precY = 0;
+
             pop->sub[isub].rep[irep].mean_res = (double *)calloc(pop->sub[isub].rep[irep].dim_X[0],sizeof(double));
             pop->sub[isub].rep[irep].mean_d_Y = (double *)calloc(pop->sub[isub].rep[irep].dim_X[0],sizeof(double));
             pop->sub[isub].rep[irep].mean_fit = (double *)calloc(pop->sub[isub].rep[irep].dim_X[0],sizeof(double));
            
             pop->sub[isub].rep[irep].prop_sd = (double *)calloc(4,sizeof(double));
-            pop->sub[isub].rep[irep].prop_sd[0] = 0.0005;
-            pop->sub[isub].rep[irep].prop_sd[1] = 0.05;
-            pop->sub[isub].rep[irep].prop_sd[2] = 0.0001;
+            pop->sub[isub].rep[irep].prop_sd[0] = 0.005;
+            pop->sub[isub].rep[irep].prop_sd[1] = 0.005;
+            pop->sub[isub].rep[irep].prop_sd[2] = 0.001;
             pop->sub[isub].rep[irep].prop_sd[3] = 100;
             
             pop->sub[isub].rep[irep].accept = (int *)calloc(4,sizeof(int));
             pop->sub[isub].rep[irep].attempt = (int *)calloc(4,sizeof(int));
+            
+            /*** open log files for output ***/
             
             C = strcpy(C,pop->sub[isub].rep[irep].dataname);
             C = strtok(C,".");
@@ -518,7 +524,7 @@ void load_data_structs(POP *pop,int PPP)
             S = strcpy(S,"./log/");
             S = strcat(S,C);
             S = strcat(S,"_DLM.log");
-            pop->sub[isub].rep[irep].fout_dlm = fopen(S,"w");
+            pop->sub[isub].rep[irep].fout_dlm = fopen(S,"w+");
 
             S = strcpy(S,"./log/");
             S = strcat(S,C);
@@ -559,7 +565,54 @@ void load_data_structs(POP *pop,int PPP)
             S = strcat(S,C);
             S = strcat(S,"_fit.log");
             pop->sub[isub].rep[irep].fout_fit = fopen(S,"w");
-           
+ 
+            S = strcpy(S,"./log/");
+            S = strcat(S,C);
+            S = strcat(S,"_X.log");
+            pop->sub[isub].rep[irep].fout_X = fopen(S,"w");
+          
+            int nrow = pop->sub[isub].rep[irep].dim_X[0];
+            int ncol = pop->sub[isub].rep[irep].dim_X[1];
+            for (int i=0;i<nrow;i++) {
+                for (int j=0;j<ncol;j++) {
+                    fprintf(pop->sub[isub].rep[irep].fout_X,"%.20lf ",pop->sub[isub].rep[irep].X[i*ncol+j]);
+                }
+                fprintf(pop->sub[isub].rep[irep].fout_X,"\n");
+            }
+            fclose(pop->sub[isub].rep[irep].fout_X);
+  
+            S = strcpy(S,"./log/");
+            S = strcat(S,C);
+            S = strcat(S,"_Y.log");
+            pop->sub[isub].rep[irep].fout_Y = fopen(S,"w");
+          
+            nrow = pop->sub[isub].rep[irep].dim_X[0];
+            for (int i=0;i<nrow;i++) 
+                    fprintf(pop->sub[isub].rep[irep].fout_Y,"%.20lf ",pop->sub[isub].rep[irep].Y[i]);
+            fclose(pop->sub[isub].rep[irep].fout_Y);
+  
+            S = strcpy(S,"./log/");
+            S = strcat(S,C);
+            S = strcat(S,"_HRF.log");
+            pop->sub[isub].rep[irep].fout_HRF = fopen(S,"w");
+ 
+            nrow = dim_HRF[0];
+            ncol = dim_HRF[1];
+            for (int i=0;i<nrow;i++) {
+                for (int j=0;j<ncol;j++)
+                    fprintf(pop->sub[isub].rep[irep].fout_HRF,"%lf ",HRF[i][j]);
+                fprintf(pop->sub[isub].rep[irep].fout_HRF,"\n");
+            }
+            fclose(pop->sub[isub].rep[irep].fout_HRF);
+            
+            for (int i=0;i<nrow;i++)
+                free(HRF[i]);
+            free(HRF);
+
+            S = strcpy(S,"./log/");
+            S = strcat(S,C);
+            S = strcat(S,"_Xbeta.log");
+            pop->sub[isub].rep[irep].fout_Xbeta = fopen(S,"w");
         }
         
         S = strcpy(S,"./log/");
@@ -575,21 +628,69 @@ void load_data_structs(POP *pop,int PPP)
     free(dim_design);
     free(dim_HRF);
     
-    int max = 0;
+    /*** create DLM structures ***/
+    
+    int max_dimX = 0;
     for (int i=0;i<pop->N_SUBS;i++)
         for (int j=0;j<pop->sub[i].N_REPS;j++)
-            max = (max > pop->sub[i].rep[j].dim_X[0]) ? max:pop->sub[i].rep[j].dim_X[0];
+            max_dimX = (max_dimX > pop->sub[i].rep[j].dim_X[0]) ? max_dimX:pop->sub[i].rep[j].dim_X[0];
  
-    dlmStruc = (sDLM *)calloc(max,sizeof(sDLM));
-    for (int i=0;i<max;i++)
+    dlmStruc = (sDLM *)calloc(max_dimX,sizeof(sDLM));
+    for (int i=0;i<max_dimX;i++)
         dlmStruc[i].a = (double *)calloc(maxP,sizeof(double));
-    for (int i=0;i<max;i++)
+    for (int i=0;i<max_dimX;i++)
         dlmStruc[i].m = (double *)calloc(maxP,sizeof(double));
-    for (int i=0;i<max;i++)
+    for (int i=0;i<max_dimX;i++)
         dlmStruc[i].R = (double *)calloc(maxP*maxP,sizeof(double));
-    for (int i=0;i<max;i++)
+    for (int i=0;i<max_dimX;i++)
         dlmStruc[i].C = (double *)calloc(maxP*maxP,sizeof(double));
+     for (int i=0;i<max_dimX;i++)
+        dlmStruc[i].S = 1.;
+    for (int i=0;i<max_dimX;i++)
+        dlmStruc[i].n = 1.;
+    for (int i=0;i<max_dimX;i++)
+        dlmStruc[i].d = 1.;
 
+}
+
+
+double *subsample_data(double *old_TS,int len,int *sublen,double true_freq,double samp_freq)
+{
+    int sub_samp;
+    double *new_TS;
+    
+    sub_samp = (int)round(true_freq/samp_freq);
+    *sublen = 0;
+    for (int i=0;i<len;i+=sub_samp)
+        (*sublen)++;
+    new_TS = (double *)calloc(*sublen,sizeof(double));
+    int n = 0;
+    for (int i=0;i<len;i+=sub_samp) {
+        new_TS[n] = old_TS[i];
+        n++;
+    }
+    return new_TS;        
+}
+
+double *subsample_design(double *mat,int len,int ncol,int *sublen,double true_freq,double samp_freq)
+{
+    double *ts,*subsampMat;
+    double *new_TS;
+    
+    ts = (double *)calloc(len,sizeof(double));
+    for (int j=0;j<ncol;j++) {
+        for (int i=0;i<len;i++)
+            ts[i] = mat[i*ncol+j];
+        new_TS = subsample_data(ts,len,sublen,true_freq,samp_freq);
+        if (j==0) {
+            subsampMat = (double *)calloc(*sublen*ncol,sizeof(double));
+        }
+        for (int i=0;i<*sublen;i++)
+            subsampMat[i*ncol+j] = new_TS[i];
+        free(new_TS);
+    }
+    free(ts);
+    return subsampMat;
 }
 
 void itoa(int n,char s[])
