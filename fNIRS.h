@@ -55,6 +55,7 @@ typedef struct replication{
       
     double *mdelta;
     double *mdelta2; 
+    double *std_res;
     double *mean_res;
     double *mean_d_Y;
     double *mean_fit;
@@ -78,10 +79,11 @@ typedef struct replication{
     FILE *fout_eta;
     FILE *fout_dlm;
     FILE *fout_res;
+    FILE *fout_stdres;
     FILE *fout_delta;
     FILE *fout_nknots;
     FILE *fout_knots;
-    FILE *fout_prec;
+    FILE *fout_stdev;
     FILE *fout_wdelta;
     FILE *fout_veta;
     FILE *fout_fit;
@@ -95,6 +97,7 @@ typedef struct replication{
 typedef struct subdata{
     int N_REPS;
     double freq;
+    double subsampled_freq;
     REP *rep;
     double *beta;  // subject level effects  (Nb*Ns)
     double *conv_beta;  // converted subject level effects

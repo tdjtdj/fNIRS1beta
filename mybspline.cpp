@@ -149,7 +149,14 @@ double *create_bspline_basis(int N,double TIME,double freq,int int_knots,int *di
             free(Y);
            break;
     }
-
+/*    FILE *ff;
+    ff = fopen("spline.log","w");
+    for (i=0;i<N;i++) {
+        for (j=0;j<dim[1];j++)
+            fprintf(ff,"%g ",Y2[i*dim[1]+j]);
+        fprintf(ff,"\n");
+     }
+     fclose(ff);*/
     return Y2;
 }
 

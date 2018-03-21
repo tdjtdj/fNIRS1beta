@@ -17,6 +17,7 @@ void load_config_info(POP *pop,const char *config_file,unsigned long *seed)
     int isub=0;
     int irep=0;
     int ifreq=0;
+    int isfreq=0;
     int istim=0;
     int is=0;
     int idata=0;
@@ -107,8 +108,15 @@ void load_config_info(POP *pop,const char *config_file,unsigned long *seed)
         else if (!strcmp(C,"SUB_Freq")) {
             while ((C = strtok(NULL," ")) != NULL) {
                 pop->sub[ifreq].freq = atof(C);
+                
             }
             ifreq++;
+        }
+        else if (!strcmp(C,"SubSamp_Freq")) {
+            while ((C = strtok(NULL," ")) != NULL) {
+                pop->sub[isfreq].subsampled_freq = atof(C);
+            }
+            isfreq++;
         }
         else if (!strcmp(C,"POP_Stim")) {
             while ((C = strtok(NULL," ")) != NULL) {
@@ -297,6 +305,9 @@ void load_data_structs(POP *pop,int PPP)
     double *subsample_data(double *old_TS,int len,int *sublen,double true_freq,double samp_freq);
     double *subsample_design(double *mat,int len,int ncol,int *sublen,double true_freq,double samp_freq);
     void standardize_data(double *x,const int len);       
+    void remove_beginning_and_end(double freq,double *Y,double *X,int *nrow,int ncol,int *N_start,int *N_end);
+    void compute_mean_sd(double *mean,double *sd,const double *x,const int len);
+    void kernel_reg(double *f,double *Y,double *X,double lambda,int N);
 
     S = (char *)calloc(300,sizeof(char));
     C = (char *)calloc(300,sizeof(char));
@@ -324,11 +335,12 @@ void load_data_structs(POP *pop,int PPP)
             while (fscanf(fout,"%lf ",&(yin)) != EOF)
                 N++;
            
-            rep->Y = (double *)calloc(N,sizeof(double));
+            double *Y;
+            Y = (double *)calloc(N,sizeof(double));
             rewind(fout);
             
             for (int i=0;i<N;i++)
-                int ifs = fscanf(fout,"%lf ",&(rep->Y[i]));
+                int ifs = fscanf(fout,"%lf ",&(Y[i]));
             
             fclose(fout);
             
@@ -343,29 +355,46 @@ void load_data_structs(POP *pop,int PPP)
             dim_design[0] = N;
             dim_design[1] = cnt/(N);
         
-            double **design;
-            design = (double **)calloc(N,sizeof(double *));
-            for (int i=0;i<N;i++)
-                design[i] = (double *)calloc(dim_design[1],sizeof(double));
+            double *dd;
+            dd = (double *)calloc(N*dim_design[1],sizeof(double));
             for (int i=0;i<N;i++)
                 for (int j=0;j<dim_design[1];j++)
-                    int ifs = fscanf(fout,"%lf ",&(design[i][j]));
+                    int ifs = fscanf(fout,"%lf ",&(dd[i*dim_design[1]+j]));
         
             fclose(fout);
+ 
+            int N_start,N_end;
+ //           remove_beginning_and_end(sub->freq,Y,dd,&N,dim_design[1],&N_start,&N_end);
+            N_start = 0;
+            N_end = N;
+            dim_design[0] = N;
+           
+            rep->Y = (double *)calloc(N,sizeof(double));
+            for (int i=N_start;i<N_end;i++)
+                rep->Y[i-N_start] = Y[i];
+            free(Y);
+            double **design = (double **)calloc(N,sizeof(double *));
 
-            // CONVOLVE DESIGN MATRIX WITH HRF
+            for (int i=0;i<N;i++)
+                design[i] = (double *)calloc(dim_design[1],sizeof(double));
+            for (int i=N_start;i<N_end;i++)
+                for (int j=0;j<dim_design[1];j++)
+                    design[i-N_start][j] = dd[i*dim_design[1]+j];
+            free(dd);
+
+          // CONVOLVE DESIGN MATRIX WITH HRF
             HRF = canonical_HRF(35,sub->freq,dim_HRF,pop->Nb-1);
             pop->Nb = dim_HRF[1];
  
+/* need to convert dd to design either here or inside convolve, the delete dd */
+
             rep->X = convolve(design,HRF,dim_design,dim_HRF);
-  
             for (int i=0;i<N;i++)
                 free(design[i]);
             free(design);
- 
             // subsample data and design
-            
-            int sfreq = 10;
+ 
+             double sfreq = sub->subsampled_freq;
             if (sub->freq > sfreq) {
                 int subN;
 
@@ -388,9 +417,22 @@ void load_data_structs(POP *pop,int PPP)
             rep->dim_X[0] = N;
             rep->dim_X[1] = dim_design[1]*dim_HRF[1];
 
-            // standardize TS
+          // standardize TS
 
             standardize_data(rep->Y,(const int)N);
+            double *f = (double *)calloc(N,sizeof(double));
+            double *data = (double *)calloc(N,sizeof(double));
+            for (int i=0;i<N;i++)
+                data[i] = i;
+            kernel_reg(f,rep->Y,data,sfreq,N);
+            for (int i=0;i<N;i++)
+                f[i] = rep->Y[i] - f[i];
+            double mean,sd;
+            compute_mean_sd(&mean,&sd,f,(const int)N);
+            for (int i=0;i<N;i++)
+                rep->Y[i] /= sd;
+            free(data);
+            free(f);
 
             // rescale design matrix
             
@@ -432,7 +474,6 @@ void load_data_structs(POP *pop,int PPP)
                 fprintf(flog,"%lf ",pop->sub[isub].rep[irep].knots[i]);
             fprintf(flog,"\n");
            
-            
             /*** initialize TVAR TERMS ***/
             
             
@@ -498,12 +539,13 @@ void load_data_structs(POP *pop,int PPP)
             pop->sub[isub].rep[irep].LY = 1./16.;
             pop->sub[isub].rep[irep].precYstart = 1;
 
+            pop->sub[isub].rep[irep].std_res = (double *)calloc(pop->sub[isub].rep[irep].dim_X[0],sizeof(double));
             pop->sub[isub].rep[irep].mean_res = (double *)calloc(pop->sub[isub].rep[irep].dim_X[0],sizeof(double));
             pop->sub[isub].rep[irep].mean_d_Y = (double *)calloc(pop->sub[isub].rep[irep].dim_X[0],sizeof(double));
             pop->sub[isub].rep[irep].mean_fit = (double *)calloc(pop->sub[isub].rep[irep].dim_X[0],sizeof(double));
            
             pop->sub[isub].rep[irep].prop_sd = (double *)calloc(4,sizeof(double));
-            pop->sub[isub].rep[irep].prop_sd[0] = 0.005;
+            pop->sub[isub].rep[irep].prop_sd[0] = 0.001;
             pop->sub[isub].rep[irep].prop_sd[1] = 0.005;
             pop->sub[isub].rep[irep].prop_sd[2] = 0.001;
             pop->sub[isub].rep[irep].prop_sd[3] = 100;
@@ -528,8 +570,13 @@ void load_data_structs(POP *pop,int PPP)
 
             S = strcpy(S,"./log/");
             S = strcat(S,C);
-            S = strcat(S,"_res.log");
+            S = strcat(S,"_rawres.log");
             pop->sub[isub].rep[irep].fout_res = fopen(S,"w");
+
+            S = strcpy(S,"./log/");
+            S = strcat(S,C);
+            S = strcat(S,"_stdres.log");
+            pop->sub[isub].rep[irep].fout_stdres = fopen(S,"w");
 
             S = strcpy(S,"./log/");
             S = strcat(S,C);
@@ -548,8 +595,8 @@ void load_data_structs(POP *pop,int PPP)
 
             S = strcpy(S,"./log/");
             S = strcat(S,C);
-            S = strcat(S,"_prec.log");
-            pop->sub[isub].rep[irep].fout_prec = fopen(S,"w");
+            S = strcat(S,"_stdev.log");
+            pop->sub[isub].rep[irep].fout_stdev = fopen(S,"w");
             
             S = strcpy(S,"./log/");
             S = strcat(S,C);
@@ -645,7 +692,7 @@ void load_data_structs(POP *pop,int PPP)
     for (int i=0;i<max_dimX;i++)
         dlmStruc[i].C = (double *)calloc(maxP*maxP,sizeof(double));
      for (int i=0;i<max_dimX;i++)
-        dlmStruc[i].S = 1.;
+         dlmStruc[i].S = 1.;
     for (int i=0;i<max_dimX;i++)
         dlmStruc[i].n = 1.;
     for (int i=0;i<max_dimX;i++)
@@ -653,6 +700,50 @@ void load_data_structs(POP *pop,int PPP)
 
 }
 
+void remove_beginning_and_end(double freq,double *Y,double *X,int *nrow,int ncol,int *N_start,int *N_end)
+{
+    int i,j;
+    double t_start,t_end;
+    
+    *N_start = 0;
+    *N_end = *nrow-1;
+    
+    for (i=0;i<*nrow;i++) {
+        for (j=0;j<ncol;j++) {
+            if (X[i*ncol+j] == 1)
+                break;
+        }
+        if (X[i*ncol+j] == 1)
+            break;
+        else
+            (*N_start)++;
+    }
+    t_start = (double)*N_start/freq;
+    
+    for (i=(*nrow-1);i>=0;i--) {
+        for (j=(ncol-1);j>=0;j--) {
+            if (X[i*ncol+j] == 1)
+                break;
+        }
+        if (X[i*ncol+j] == 1)
+            break;
+        else
+            (*N_end)--;
+    }
+    t_end = (double)*N_end/freq;
+    
+    if (t_end + 5. < (double)*nrow/freq)
+        *N_end += (int)((floor)(5.*freq)) + 1;
+    else
+        *N_end = *nrow;
+    if (t_start <= 2.)
+        *N_start = 0;
+    
+    int nr = *nrow;
+    *nrow = *N_end - *N_start;
+
+//    printf("N_start = %d time = %lf \t N_end = %d\t nrow = %d time = %lf nrow = %d\n",*N_start,(double)*N_start/freq,*N_end,nr,(double)(nr-*N_end)/freq,*nrow);fflush(stdout);
+}
 
 double *subsample_data(double *old_TS,int len,int *sublen,double true_freq,double samp_freq)
 {

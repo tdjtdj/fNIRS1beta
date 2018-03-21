@@ -103,16 +103,16 @@ void mcmc(POP *pop,unsigned long *seed) {
             for (irep=0;irep<sub->N_REPS;irep++) {
                 rep = &(sub->rep[irep]);
                 
-                if (iter > 0)
-                    aaa = knot_birth_death(rep,pop,sdegree,iter,seed);
-
+               if (iter > 0)
+                   aaa = knot_birth_death(rep,pop,sdegree,iter,seed);
+ 
                 fprintf(rep->fout_nknots,"%d ",rep->nKnots-2*sdegree);fflush(rep->fout_nknots);
                 
-                for (i=0;i<rep->nKnots-sdegree*2;i++) {
+                 for (i=0;i<rep->nKnots-sdegree*2;i++) {
                     int flag = 0;
                     draw_knot_locations(rep,sdegree,&flag,seed);
                 }
-               
+ 
                 if (rep->dim_W[1] > 0) {
                     DLMtst(rep,iter,fdelta1,seed);
                     DLMtst(rep,iter,fdelta2,seed);
@@ -226,9 +226,10 @@ void mcmc(POP *pop,unsigned long *seed) {
                     DIC(pop,rep,seed);
  
                     for (i=0;i<rep->dim_X[0];i++) {
-                        rep->mean_res[i] += rep->residuals[i]*sqrt(rep->d_Y[i]);
-                        rep->mean_d_Y[i] += rep->d_Y[i];
                         rep->mean_fit[i] += rep->Y[i] - rep->residuals[i];
+                        rep->std_res[i]  += rep->residuals[i]*sqrt(rep->d_Y[i]);
+                        rep->mean_res[i] += rep->residuals[i];
+                        rep->mean_d_Y[i] += rep->d_Y[i];
                     }
                                        
                      
@@ -299,10 +300,10 @@ void mcmc(POP *pop,unsigned long *seed) {
             rep = &(sub->rep[irep]);
             for (i=0;i<rep->dim_X[0];i++) {
                     rep->md_Y[i] /= (double)(MAX_ITER-BURN_IN);
-                    fprintf(rep->fout_prec,"%lf ",rep->md_Y[i]);
+                    fprintf(rep->fout_stdev,"%lf ",rep->md_Y[i]);
             }                
-            fprintf(rep->fout_prec,"\n");                  
-            fclose(rep->fout_prec);
+            fprintf(rep->fout_stdev,"\n");                  
+            fclose(rep->fout_stdev);
         }
     }     
       
@@ -342,6 +343,7 @@ void mcmc(POP *pop,unsigned long *seed) {
         for (irep=0;irep<sub->N_REPS;irep++) {
             rep = &(sub->rep[irep]);
             for (i=0;i<rep->dim_X[0];i++) {
+                rep->std_res[i] /= ((MAX_ITER-BURN_IN));
                 rep->mean_res[i] /= ((MAX_ITER-BURN_IN));
                 rep->mean_fit[i] /= ((MAX_ITER-BURN_IN));
                 rep->mean_d_Y[i] /= ((MAX_ITER-BURN_IN));
@@ -354,7 +356,7 @@ void mcmc(POP *pop,unsigned long *seed) {
         sub = &(pop->sub[isub]);
         for (irep=0;irep<sub->N_REPS;irep++) {
             rep = &(sub->rep[irep]);
-            for (i=rep->P;i<rep->dim_X[0];i++)
+            for (i=maxP;i<rep->dim_X[0];i++)
                 DE += mlogsqrt2pi + sqrt(rep->mean_d_Y[i]) - 0.5*(rep->mean_res[i])*(rep->mean_res[i]*rep->mean_d_Y[i]);
         }
     }
@@ -371,6 +373,16 @@ void mcmc(POP *pop,unsigned long *seed) {
             for (i=0;i<rep->dim_X[0];i++)
                 fprintf(rep->fout_res,"%lf ",rep->mean_res[i]);
             fclose(rep->fout_res);
+        }
+    }
+
+    for (isub=0;isub<pop->N_SUBS;isub++) {
+        sub = &(pop->sub[isub]);
+        for (irep=0;irep<sub->N_REPS;irep++) {
+            rep = &(sub->rep[irep]);
+            for (i=0;i<rep->dim_X[0];i++)
+                fprintf(rep->fout_stdres,"%lf ",rep->std_res[i]);
+            fclose(rep->fout_stdres);
         }
     }
 
@@ -463,8 +475,9 @@ void calWdelta(double *Ax,double *A,double *x,const int nrow,const int ncol) {
      for (i=0;i<nrow;i++) {
         Ax[i] = 0;
         if (i>= ncol) {
-        for (j=0;j<ncol;j++)
-            Ax[i] += A[i*ncol+j]*x[i*ncol+j];}
+            for (j=0;j<ncol;j++)
+                Ax[i] += A[i*ncol+j]*x[i*ncol+j];
+            }
     }
     
 }
@@ -570,7 +583,7 @@ void draw_preceta(REP *rep,unsigned long *seed) {
     b = 0.5*b + BETA;
     
     double tmp = rgamma(a,b,seed);
-    if (tmp > 0.001)
+    if (tmp > 0.000001)
         rep->preceta = tmp;
 }
 
@@ -809,7 +822,7 @@ void DIC(POP *pop,REP *rep,unsigned long *seed) {
 //     calculate_marginal_residuals(rep,rep->P);
     calculate_residuals(rep,rep->P);
     tmp = 0;
-    for (i=rep->P;i<rep->dim_X[0];i++)
+    for (i=maxP;i<rep->dim_X[0];i++)
             tmp += mlogsqrt2pi + sqrt(rep->d_Y[i]) - 0.5*rep->d_Y[i]*(rep->residuals[i])*(rep->residuals[i]);
 
     pop->ED += -2*tmp;

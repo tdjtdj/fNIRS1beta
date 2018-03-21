@@ -20,7 +20,7 @@ void draw_knot_locations(REP *rep,int sdegree,int *flag,unsigned long *seed)
     int i,j,k,l;
     double old_like,new_like;
     double like_ratio,prior_ratio,*data,*knots;
-    double *V,*knots2,tmp,max,*eta,*eta2;
+    double *knots2,tmp,max,*eta,*eta2;
     void bsplinebasis(int j,int k,int SplineOrder,double x,double *knots,int Nknots,double *b);
     void calculate_residuals(REP *rep,int P);
     void calAx(double *Ax,double *A,double *x,const int nrow,const int ncol);   
@@ -44,9 +44,6 @@ void draw_knot_locations(REP *rep,int sdegree,int *flag,unsigned long *seed)
     for (i=0;i<rep->nKnots;i++)
         knots[i] = rep->knots[i];
     
-    V = (double *)calloc(rep->dim_V[0]*rep->dim_V[1],sizeof(double));
-//    for (i=0;i<rep->dim_V[0];i++)
-//        V[i] = (double *)calloc((rep->dim_V[1]),sizeof(double));
     eta = (double *)calloc(rep->dim_V[1],sizeof(double));
     eta2 = (double *)calloc(rep->dim_V[1],sizeof(double));
     for (i=0;i<rep->dim_V[1];i++)
@@ -59,7 +56,6 @@ void draw_knot_locations(REP *rep,int sdegree,int *flag,unsigned long *seed)
         for (i = sdegree;i<rep->nKnots-sdegree;i++){
             if (!(i==j)) {
                 if (fabs(knots[j]-knots[i]) < 0.0001) {
-                    free(V);
                     free(eta);
                     free(eta2);
                     free(knots);
@@ -80,40 +76,33 @@ void draw_knot_locations(REP *rep,int sdegree,int *flag,unsigned long *seed)
             for (i=0;i<rep->dim_V[1];i++)
                 eta2[i] = eta[i];
             
-            for (i=0;i<rep->nKnots-sdegree-1;i++) {  // reorder knots so their locations are sequential
+            for (i=sdegree;i<rep->nKnots-sdegree-1;i++) {  // reorder knots so their locations are sequential
                 for (k=i+1;k<rep->nKnots-sdegree;k++) {
                     if (knots2[k] < knots2[i]) {
                         tmp = knots2[k];
                         knots2[k] = knots2[i];
                         knots2[i] = tmp; 
-                        tmp = eta2[k];
-                        eta2[k] = eta2[i];
-                        eta2[i] = tmp;                     
+                        tmp = eta2[k-2];
+                        eta2[k-2] = eta2[i-2];
+                        eta2[i-2] = tmp;                     
                     }
                 }
             }
             
-            for (i=0;i<rep->dim_V[0];i++)
-                for (k=0;k<rep->dim_V[1];k++)
-                    V[i*rep->dim_V[1]+k] = 0;
+            for (i=0;i<rep->dim_V[0]*rep->dim_V[1];i++)
+                    rep->V[i] = 0;
 
-            for (i=0;i<rep->dim_V[0];i++) {  // create new bspline basis
-                bsplinebasis(0,0,sdegree,data[i],knots2,rep->nKnots,&V[i*rep->dim_V[1]]);
-            }
+            for (i=0;i<rep->dim_V[0];i++)   // create new bspline basis
+                bsplinebasis(0,0,sdegree,data[i],knots2,rep->nKnots,&(rep->V[i*rep->dim_V[1]]));
+            
  
            // calculate Veta, calculate residuals
  
-            calAx(rep->Veta,V,eta2,(const int)rep->dim_V[0],(const int)(rep->dim_V[1]));
+            calAx(rep->Veta,rep->V,eta2,(const int)rep->dim_V[0],(const int)(rep->dim_V[1]));
             calW(rep->W,rep->Y,rep->Xbeta,rep->Veta,(const int)rep->dim_W[0],(const int)rep->dim_W[1],rep->P);
             calWdelta(rep->Wdelta,rep->W,rep->delta,(const int)rep->dim_W[0],(const int)rep->dim_W[1]);
-            int P = rep->dim_W[1];
-            for (i=0;i<rep->dim_X[0];i++) {
-                if (i < P)
-                    rep->residuals[i] = rep->Y[i] - rep->Veta[i];
-                else
-                    rep->residuals[i] = rep->Y[i] - rep->Veta[i] - rep->Wdelta[i] - rep->Xbeta[i];
-            }
-
+ 
+            calculate_residuals(rep,rep->P);
             // calculate new log likelihood
             new_like = 0;
            for (i=0;i<rep->dim_X[0];i++)
@@ -126,58 +115,29 @@ void draw_knot_locations(REP *rep,int sdegree,int *flag,unsigned long *seed)
   //          printf("%lf %lf %lf\n",kiss(seed),like_ratio,prior_ratio);
             if (log(kiss(seed)) < like_ratio + prior_ratio) { // accept new location
                 (rep->accept[3])++;
-                rep->knots[j] = knots[j];
-//                rep->eta[j] = eta[j];
-                old_like = new_like;
-                *flag = 1;
-              }
-            else {   // reject new location
-                knots[j] = rep->knots[j];
-//                eta[j] = rep->eta[j];
+                for (i=0;i<rep->dim_V[1];i++)
+                    rep->eta[i] = eta2[i];
+                for (i=0;i<rep->nKnots;i++)
+                    rep->knots[i] = knots2[i];
+                 *flag = 1;
             }
-        }
-        else { // reject new location, not an interior knot
-            knots[j] = rep->knots[j];
-//            eta[j] = rep->eta[j];
-         }
-//    }
+            else {
+                for (i=0;i<rep->dim_V[0]*rep->dim_V[1];i++)
+                    rep->V[i] = 0;
+                for (i=0;i<rep->dim_V[0];i++)   // create new bspline basis
+                    bsplinebasis(0,0,sdegree,data[i],rep->knots,rep->nKnots,&rep->V[i*rep->dim_V[1]]);
     
-    //  save basis, Veta, residuals
-    if (*flag) {
-     for (i=0;i<rep->nKnots-sdegree-1;i++) {
-        for (k=i+1;k<rep->nKnots-sdegree;k++) {
-            if (rep->knots[k] < rep->knots[i]) {
-                tmp = rep->knots[k];
-                rep->knots[k] = rep->knots[i];
-                rep->knots[i] = tmp;
-                tmp = rep->eta[k];
-                rep->eta[k] = rep->eta[i];
-                rep->eta[i] = tmp;
+                calAx(rep->Veta,rep->V,rep->eta,(const int)rep->dim_V[0],(const int)(rep->dim_V[1]));
+
+                calW(rep->W,rep->Y,rep->Xbeta,rep->Veta,(const int)rep->dim_W[0],(const int)rep->dim_W[1],rep->P);
+                calWdelta(rep->Wdelta,rep->W,rep->delta,(const int)rep->dim_W[0],(const int)rep->dim_W[1]);
+
+                calculate_residuals(rep,rep->P);
             }
         }
-    }
-//printf("nKnots - sdegree = %d dim_V[1] = %d\n",rep->nKnots-sdegree,rep->dim_V[1]);
-            for (i=0;i<rep->dim_V[0];i++)
-                for (k=0;k<rep->dim_V[1];k++)
-                    rep->V[i*rep->dim_V[1]+k] = 0;
-
-            for (i=0;i<rep->dim_V[0];i++) {  // create new bspline basis
-                bsplinebasis(0,0,sdegree,data[i],rep->knots,rep->nKnots,&rep->V[i*rep->dim_V[1]]);
-            }
- 
-    }
-
-
-    calAx(rep->Veta,rep->V,rep->eta,(const int)rep->dim_V[0],(const int)(rep->dim_V[1]));
-
-    calW(rep->W,rep->Y,rep->Xbeta,rep->Veta,(const int)rep->dim_W[0],(const int)rep->dim_W[1],rep->P);
-    calWdelta(rep->Wdelta,rep->W,rep->delta,(const int)rep->dim_W[0],(const int)rep->dim_W[1]);
-
-    calculate_residuals(rep,rep->P);
 
     // free allocated scratch memory
     
-    free(V);
     free(eta);
     free(eta2);   
     free(knots);
@@ -218,9 +178,8 @@ int calculate_death_rates(double *death_rate,double *Death_rate,double Birth_rat
                     V[j*(rep->dim_V[1]-1)+k] = 0;
             
                /* remove each knot in turn and calculate partial likelihoods */
-            remove_knot(rep,V,eta,knots,4,i);
-            
-            /* calculate Veta */
+             remove_knot(rep,V,eta,knots,4,i);
+             /* calculate Veta */
             
             calAx(Veta,V,eta,(const int)rep->dim_V[0],(const int)(rep->dim_V[1]-1));
             
@@ -231,7 +190,7 @@ int calculate_death_rates(double *death_rate,double *Death_rate,double Birth_rat
             
             for (j=0;j<rep->dim_X[0];j++) {
                 if (j < P)
-                    rep->residuals[j] = rep->Y[j] - Veta[j];
+                    rep->residuals[j] = rep->Y[j] - Veta[j] - rep->Xbeta[j];
                 else
                     rep->residuals[j] = rep->Y[j] - Veta[j] - Wdelta[j] - rep->Xbeta[j];
             }
@@ -241,7 +200,7 @@ int calculate_death_rates(double *death_rate,double *Death_rate,double Birth_rat
                 partial_likelihood[i] += rep->d_Y[j]*rep->residuals[j]*rep->residuals[j];
             partial_likelihood[i] *= -0.5;
         }
-        
+
         free(knots);
         free(eta);
 //        for (i=0;i<rep->dim_V[0];i++)
@@ -297,9 +256,11 @@ void birth(REP *rep,POP *pop,double *full_likelihood,unsigned long *seed) {
 
     position = runif_atob(seed,0,rep->dim_V[0]-1);
     for (i = sdegree;i<rep->nKnots-sdegree;i++){
-        if (fabs(position-rep->knots[i]) < 0.1) {
-                    return;
-         }
+        if (fabs(position-rep->knots[i]) < 0.0001) {
+            position = runif_atob(seed,0,rep->dim_V[0]-1);
+            i = sdegree;
+          //  return;
+        }
     }
      /* simulate eta from its full cond */
  
@@ -454,7 +415,7 @@ void death(double *death_rate,REP *rep,POP *pop,double *full_likelihood,int sdeg
 
 int knot_birth_death(REP *rep,POP *pop,const int sdegree,int iter,unsigned long *seed){
     
-    int i,j,k,aaa,dflag,max_knots = 100;
+    int i,j,k,aaa,dflag,max_knots = 200;
     double Birth_rate,prior_rate,T,full_likelihood,max,S;
     double Death_rate,*death_rate,position,*partial_likelihood;
 
@@ -464,10 +425,10 @@ int knot_birth_death(REP *rep,POP *pop,const int sdegree,int iter,unsigned long 
     
     // set simulation time
 
-    prior_rate = pop->knots;//rgamma(pop->knots,1,seed); 
-    Birth_rate = 15;//prior_rate;
- //   T= 1./Birth_rate;
-    T = 1;
+    prior_rate = rgamma(pop->knots,1,seed); 
+    Birth_rate = prior_rate;
+    T= 1./Birth_rate;
+
     calculate_residuals(rep,rep->P);
     
     // calculate likelihood;

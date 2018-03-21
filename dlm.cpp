@@ -13,19 +13,52 @@ extern double md1,md2;
 extern int mP;
 double max_ll;
 
+void cA(double *C,const double c,double *A,const int dim)
+{
+    for (int i=0;i<dim;i++)
+        C[i] = c*A[i];
+}
+
+void copydouble(double *B,double *A,const int dim)
+{
+    for (int i=0;i<dim;i++)
+        B[i] = A[i];
+}
+
+void transpose(double *At,double *A,const int nrow,const int ncol)
+{
+    for (int i=0;i<nrow;i++)
+        for (int j=0;j<ncol;j++)
+            At[j*nrow+i] = A[i*ncol+j];
+}
+ 
+void addtodouble(double *A,double *B,const int dim,const int sign)
+{
+    for (int i=0;i<dim;i++)
+        A[i] += sign*B[i];
+}
+
+void adddoubles(double *C,double *A,double *B,const int dim,const int sign)
+{
+    for (int i=0;i<dim;i++)
+        C[i] = A[i] + sign*B[i];
+}
+
 double dlm_forward_filter_draw(REP *rep,sDLM *dlmStruc,const int Pmax, const int P, const double beta,const double delta,double *W)
 {
     double n0,S0;
-    double Q,*A;
+    double Q,*A,*CC;
     double f,e;
     double tden(double x,double mean,double var,double df);
     
     A = (double *)calloc(P,sizeof(double));
+    CC = (double *)calloc(P*P,sizeof(double));
         
     for (int i=0;i<P*P;i++)
             dlmStruc[P-1].C[i] = 0;
     for (int i=0;i<P;i++)
             dlmStruc[P-1].C[i*P+i] = 1;
+    
     
     S0 = 1;
     n0 = 1;            
@@ -84,7 +117,12 @@ double dlm_forward_filter_draw(REP *rep,sDLM *dlmStruc,const int Pmax, const int
         for (int i=0;i<P;i++)
             dlmStruc[t].m[i] = dlmStruc[t].a[i] + A[i]*e;
  
+        transpose(CC,dlmStruc[t].C,(const int)P,(const int)P);
+        addtodouble(CC,dlmStruc[t].C,(const int)P*P,1);
+        cA(dlmStruc[t].C,(const double)(1./2.),CC,(const int)P*P);
+ 
     }
+    free(CC);
     free(A);
     return ll;
 }
@@ -92,12 +130,13 @@ double dlm_forward_filter_draw(REP *rep,sDLM *dlmStruc,const int Pmax, const int
 void dlm_forward_filter(REP *rep,sDLM *dlmStruc)
 {
     int P;
-    double n0,S0;
+    double n0,S0,*CC;
     double Q,*A;
     double f,e;
  
     P = rep->P;  
     A = (double *)calloc(P,sizeof(double));
+    CC = (double *)calloc(P*P,sizeof(double));
         
     for (int i=0;i<max_dimX;i++) {
         dlmStruc[i].S = 0;
@@ -160,9 +199,13 @@ void dlm_forward_filter(REP *rep,sDLM *dlmStruc)
                 
         for (int i=0;i<P;i++)
             dlmStruc[t].m[i] = dlmStruc[t].a[i] + A[i]*e;
-        
-    }
 
+        transpose(CC,dlmStruc[t].C,(const int)P,(const int)P);
+        addtodouble(CC,dlmStruc[t].C,(const int)P*P,1);
+        cA(dlmStruc[t].C,(const double)(1./2.),CC,(const int)P*P);
+ 
+    }
+    free(CC);
     free(A);
 }
 
@@ -277,18 +320,16 @@ void DLMtst(REP *rep,int iter,dlm_tst_flag flag,unsigned long *seed) {
     double low,high;
     double range = rep->prop_sd[0];
     low = rep->df_delta1 - range;
-    low = (low < 0.8) ? 0.8:low;
+    low = (low < 0.000001) ? 0.000001:low;
     high = rep->df_delta1 + range;
     high = (high > 0.999999) ? 0.999999:high;
    
     prop_delta = runif_atob(seed,low,high);
     if (flag == fdelta1)
         new_logprop = -log(high-low);
-    prop_delta = runif_atob(seed,low,high);
-    if (flag == fdelta1)
-        new_logprop = -log(high-low);
+ 
     low = prop_delta - range;
-    low = (low < 0.8) ? 0.8:low;
+    low = (low < 0.000001) ? 0.000001:low;
     high = prop_delta + range;
     high = (high > 0.999999) ? 0.999999:high;
     if (flag == fdelta1)
@@ -296,15 +337,16 @@ void DLMtst(REP *rep,int iter,dlm_tst_flag flag,unsigned long *seed) {
     
     range = rep->prop_sd[1];
     low = rep->df_delta2 - range;
-    low = (low < 0.6) ? 0.6:low;
+    low = (low < 0.000001) ? 0.000001:low;
     high = rep->df_delta2 + range;
     high = (high > 0.999999) ? 0.999999:high;
     
     prop_beta = runif_atob(seed,low,high);
     if (flag == fdelta2)
         new_logprop = -log(high-low);
+ 
     low = prop_beta - range;
-    low = (low < 0.6) ? 0.6:low;
+    low = (low < 0.000001) ? 0.000001:low;
     high = prop_beta + range;
     high = (high > 0.999999) ? 0.999999:high;
     if (flag == fdelta2)
@@ -330,12 +372,21 @@ void DLMtst(REP *rep,int iter,dlm_tst_flag flag,unsigned long *seed) {
     new_loglik = dlm_forward_filter_draw(rep,dlmStruc,(const int)Pmax,(const int)prop_P,(const double)prop_beta,(const double)prop_delta,W);
   
     double new_log_prior,old_log_prior;
- /*   if (flag == fdelta2) {
-        new_log_prior = (0.8*(0.5*rep->dim_X[0]) - 1)*log(prop_beta) + (0.2*(0.5*rep->dim_X[0]) - 1)*log(1.-prop_beta);
-        old_log_prior = (0.8*(0.5*rep->dim_X[0]) - 1)*log(rep->df_delta2) + (0.2*(0.5*rep->dim_X[0]) - 1)*log(1.-rep->df_delta2);
+    switch (flag) {
+        case fdelta1:
+//           new_log_prior = (0.999*(0.2*rep->dim_X[0]) - 1)*log(prop_delta) + (0.001*(0.2*rep->dim_X[0]) - 1)*log(1.-prop_delta);
+//            old_log_prior = (0.999*(0.2*rep->dim_X[0]) - 1)*log(rep->df_delta1) + (0.001*(0.2*rep->dim_X[0]) - 1)*log(1.-rep->df_delta1);
+            new_log_prior = old_log_prior = 0;
+            break;        
+        case fdelta2: 
+            new_log_prior = (0.8*(0.2*rep->dim_X[0]) - 1)*log(prop_beta) + (0.2*(0.2*rep->dim_X[0]) - 1)*log(1.-prop_beta);
+            old_log_prior = (0.8*(0.2*rep->dim_X[0]) - 1)*log(rep->df_delta2) + (0.2*(0.2*rep->dim_X[0]) - 1)*log(1.-rep->df_delta2);
+//             new_log_prior = old_log_prior = 0;           
+            break;
+        case fP: default:
+            new_log_prior = old_log_prior = 0;
+            break;
     }
-    else*/
-        new_log_prior = old_log_prior = 0;
     if (log(kiss(seed)) < ((new_loglik - old_loglik) + (new_log_prior - old_log_prior) - (new_logprop - old_logprop))) {
         rep->df_delta1 = prop_delta;
         rep->df_delta2 = prop_beta;
